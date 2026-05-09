@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mapy-com-mcp"
-version = "0.0.0"
+version = "0.1.0"
 description = "Unofficial MCP server for mapy.com. Not affiliated with, endorsed by, or supported by Seznam.cz a.s., operators of mapy.com."
 readme = "README.md"
 license = "MIT"

@@ -1,2 +1,23 @@
+from __future__ import annotations
+
+import importlib
+import pkgutil
+
+from fastmcp import FastMCP
+
+from . import tools
+
+
+def create_app() -> FastMCP:
+    mcp = FastMCP("mapy-com-mcp")
+    for info in pkgutil.iter_modules(tools.__path__):
+        module = importlib.import_module(f"{tools.__name__}.{info.name}")
+        register = getattr(module, "register", None)
+        if not callable(register):
+            raise TypeError(f"{module.__name__} must expose a callable register(mcp)")
+        register(mcp)
+    return mcp
+
+
 def main() -> None:
-    """Console-script entry point. FastMCP wiring lands in the next phase."""
+    create_app().run()

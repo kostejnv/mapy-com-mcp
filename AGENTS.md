@@ -81,7 +81,13 @@ uv run mapy-com-mcp               # run the server (stdio by default)
 uv run pytest                 # run tests
 uv run pytest --cov=src/mapy_com_mcp   # tests with coverage
 pre-commit run --all-files    # lint + type-check everything
+make inspect                  # MCP Inspector against the local dev server
+make inspect-remote           # MCP Inspector against the published PyPI build
 ```
+
+The `make inspect*` targets shell out to `npx @modelcontextprotocol/inspector`,
+so they require Node.js / npx in addition to the Python toolchain. Everything
+else above only needs `uv`.
 
 ## Git workflow
 

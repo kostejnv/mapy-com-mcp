@@ -27,9 +27,9 @@ def test_encode_uc_known_fixture_prague_castle() -> None:
 def test_encode_uc_all_output_chars_in_alphabet() -> None:
     points = [(14.4003, 50.0907), (14.4145, 50.0876)]
     result = encode_uc(points)
-    assert all(
-        ch in _ALPHABET for ch in result
-    ), f"Unexpected chars in output: {set(result) - set(_ALPHABET)}"
+    assert all(ch in _ALPHABET for ch in result), (
+        f"Unexpected chars in output: {set(result) - set(_ALPHABET)}"
+    )
 
 
 def test_encode_uc_50_points_produces_non_empty_valid_string() -> None:

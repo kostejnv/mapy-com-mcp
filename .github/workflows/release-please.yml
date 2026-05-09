@@ -13,3 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: googleapis/release-please-action@v5
+        with:
+          # Use a PAT (or GitHub App token) so the release event fires the
+          # downstream `release.yml` workflow. Releases created with the
+          # default GITHUB_TOKEN do not trigger other workflows.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}

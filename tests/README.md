@@ -8,10 +8,14 @@ before assuming a behavior is covered.
 - **Framework:** `pytest`. Run with `uv run pytest`.
 - **HTTP mocking:** `respx`. No real network calls in tests, ever — CI
   doesn't have outbound network anyway.
+- **Async tests:** `pytest-asyncio` with `asyncio_mode = "auto"` (set in
+  `pyproject.toml`). All async tests run automatically without decorators.
+- **In-process MCP client:** `fastmcp.Client(mcp)` used as a context manager
+  to drive tools without spawning a subprocess.
 - **Layout:** one test file per source module (`src/mapy_com_mcp/foo.py` →
   `tests/test_foo.py`).
 - **Naming:** test functions read like sentences:
-  `test_geocode_returns_lat_lon_for_known_address`.
+  `test_ping_returns_pong`.
 - **Fixtures:** shared fixtures in `tests/conftest.py`. Keep narrow — prefer
   per-file fixtures unless something is truly cross-cutting.
 - **No skips, no xfails without an inline reason** that links to an issue
@@ -21,12 +25,14 @@ before assuming a behavior is covered.
 
 | Module | Tested? | Notes |
 | --- | --- | --- |
-| _(none yet)_ | — | Module-level tests will be added as tools land. |
+| `server.py` | Yes | `create_app()` discovery, `main()` wiring via mocks, `TypeError` guard for modules missing `register` |
+| `tools/ping.py` | Yes | Happy path: list shows `ping`, call returns `"pong"`, not an error |
+| `tools/__init__.py` | Yes (indirect) | Imported via `create_app()`; 100% coverage |
+| `mapy_client.py` | — | Does not exist yet |
 
 ## Known gaps
 
-- No tests yet — repo is at scaffolding stage. First tests land alongside
-  the trivial `ping` tool in step 4 of `.context/setup-plan.md`.
 - `mapy_client.py` doesn't exist yet; once it does, its tests are the most
   important to maintain (it's the only HTTP boundary, so its correctness
-  underpins everything else).
+  underpins everything else). `respx` is already installed as a dev
+  dependency for that future work.

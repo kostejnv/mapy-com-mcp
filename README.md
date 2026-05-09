@@ -4,8 +4,8 @@
 
 MCP server that gives LLM clients first-class access to [mapy.com](https://mapy.com) — a Czech mapping service with strong route planning and static map rendering.
 
-[![PyPI version](https://img.shields.io/pypi/v/mapy-com-mcp?style=flat-square)](https://pypi.org/project/mapy-com-mcp/)
-[![Python versions](https://img.shields.io/pypi/pyversions/mapy-com-mcp?style=flat-square)](https://pypi.org/project/mapy-com-mcp/)
+[![PyPI version](https://img.shields.io/pypi/v/mapy-com-mcp?style=flat-square&include_prereleases)](https://pypi.org/project/mapy-com-mcp/)
+[![Python versions](https://img.shields.io/pypi/pyversions/mapy-com-mcp?style=flat-square&include_prereleases)](https://pypi.org/project/mapy-com-mcp/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Code style: Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json&style=flat-square)](https://github.com/astral-sh/ruff)
 [![MCP-compatible](https://img.shields.io/badge/MCP-compatible-blue?style=flat-square)](https://modelcontextprotocol.io)

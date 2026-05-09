@@ -36,9 +36,16 @@ Conventions tied to this layout:
 
 - **Lint + format:** `ruff` (config in `pyproject.toml`).
 - **Type checking:** `pyright` in strict mode. Type hints everywhere.
-- **Pre-commit:** ruff + pyright + basic hygiene hooks must pass.
+- **Pre-commit:** ruff (lint+format) and basic hygiene hooks. Pyright runs
+  in CI, not in pre-commit.
 - **Tests:** `pytest` with `respx` for HTTP mocking. No real network in CI.
-- **Conventional Commits.** See "Git workflow" below.
+- **Conventional Commits.** See "Git workflow" below. Enforced locally via a
+  `commit-msg` pre-commit hook.
+- **CI / Release.** GitHub Actions runs ruff, pyright, and pytest on Python
+  3.12 + 3.13 (`ci.yml`). Releases are automated: `release-please` opens a
+  release PR from Conventional Commit history, and merging it triggers
+  `release.yml`, which publishes to PyPI via Trusted Publishing (no API
+  tokens).
 - **No AI attribution in commits or PRs.** No `Co-Authored-By: Claude`
   trailers, no "Generated with Claude Code" footers, no other AI metadata.
   This is a hard rule — see `.context/decisions.md`.
@@ -76,13 +83,15 @@ How to make changes — separate from *what tools* to use.
 ## How to run things
 
 ```
-uv sync                       # install deps + create .venv
-uv run mapy-com-mcp               # run the server (stdio by default)
-uv run pytest                 # run tests
-uv run pytest --cov=src/mapy_com_mcp   # tests with coverage
-pre-commit run --all-files    # lint + type-check everything
-make inspect                  # MCP Inspector against the local dev server
-make inspect-remote           # MCP Inspector against the published PyPI build
+uv sync                                    # install deps + create .venv
+uv run pre-commit install                  # install pre-commit (one-time)
+uv run pre-commit install --hook-type commit-msg   # commit-msg hook (one-time)
+uv run mapy-com-mcp                        # run the server (stdio by default)
+make test                                  # run pytest
+uv run pytest --cov=src/mapy_com_mcp       # tests with coverage
+make lint                                  # pre-commit run --all-files
+make inspect                               # MCP Inspector, local dev server
+make inspect-remote                        # MCP Inspector, published PyPI build
 ```
 
 The `make inspect*` targets shell out to `npx @modelcontextprotocol/inspector`,

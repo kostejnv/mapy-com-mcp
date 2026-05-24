@@ -65,5 +65,9 @@ Thumbs.db
 .env.*
 !.env.example
 
+# Local Claude Code settings (per-developer MCP config, API keys, etc.)
+.claude/settings.local.json
+.mcp.json
+
 # Misc
 *.log

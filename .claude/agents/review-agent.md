@@ -117,9 +117,13 @@ notes:
 Keep each item one or two sentences. The main agent treats your output
 as a checklist of things it may have overlooked — it decides yes/no per
 item using its own judgment and surfaces only the rejected items to the
-user. Write items as concrete suggestions, not commands. Where an item
-is a judgment call rather than a clear standards / docs / policy
-violation, say so explicitly so the main agent can weigh it accordingly.
+user. Write items as concrete suggestions, not commands.
+
+**Flag judgment calls.** Where an item is a judgment call rather than a
+clear standards / docs / policy violation, prefix the `issue:` text with
+`JUDGMENT CALL:` so the main agent can weigh it accordingly. Items
+without the prefix are taken as objective findings.
+
 The full rule lives in `AGENTS.md` ("Multi-agent workflow").
 
 ## References

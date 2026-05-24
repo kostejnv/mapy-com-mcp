@@ -154,7 +154,7 @@ async def test_find_places_single_query_happy_path(
         )
 
     assert not result.is_error
-    data = result.data
+    data: list[Any] = result.data  # type: narrowed from fastmcp's untyped Client.data
     assert isinstance(data, list)
     assert len(data) == 1
     item = data[0]

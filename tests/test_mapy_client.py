@@ -59,8 +59,8 @@ async def test_geocode_happy_path_returns_matches(client: MapyClient) -> None:
     assert isinstance(match, GeocodeMatch)
     assert match.name == "Karlův most"
     assert match.label == "Most"
-    assert match.lon == pytest.approx(14.4112)
-    assert match.lat == pytest.approx(50.0865)
+    assert match.lon == 14.4112
+    assert match.lat == 50.0865
     assert match.type == "poi"
     assert match.location == "Praha 1 - Staré Město, Česko"
     assert match.zip is None

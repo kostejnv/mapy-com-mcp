@@ -18,19 +18,19 @@ from mapy_com_mcp.server import create_app, main
 
 
 async def test_create_app_discovers_all_tool_modules() -> None:
-    """Every module under mapy_com_mcp.tools must contribute at least one tool.
-
-    The check used to compare module names against tool names directly, but tool
-    names (e.g. 'build_points_url') don't match module names (e.g. 'points_url').
-    The correct invariant is that each module's register() is called, which is
-    verified indirectly: the total number of registered tools must equal or
-    exceed the number of tool modules.
+    """Every unconditional module under mapy_com_mcp.tools must contribute at least
+    one tool.  Some modules (e.g. find_places) are gated behind MAPY_API_KEY and
+    register nothing when the key is absent.  The safe invariant is therefore that
+    the number of registered tools is at least 1 (i.e., create_app didn't silently
+    drop every tool) and that every module's register() was *called* without raising.
+    The stronger per-module check lives in test_find_places.py which exercises the
+    gate directly.
     """
-    module_count = sum(1 for _ in pkgutil.iter_modules(tools.__path__))
     mcp = create_app()
     async with Client(mcp) as client:
         registered_count = len(await client.list_tools())
-    assert registered_count >= module_count
+    # Without MAPY_API_KEY the two URL-builder tools must always be present.
+    assert registered_count >= 2
 
 
 def test_create_app_instructions_is_non_empty() -> None:
@@ -86,7 +86,7 @@ def test_create_app_raises_type_error_for_module_missing_register(
         _make_import_module_stub(stub_module, stub_module_name),
     )
 
-    with pytest.raises(TypeError, match="must expose a callable register"):
+    with pytest.raises(TypeError, match="must expose register"):
         create_app()
 
 
@@ -107,5 +107,5 @@ def test_create_app_raises_type_error_when_register_not_callable(
         _make_import_module_stub(stub_module, stub_module_name),
     )
 
-    with pytest.raises(TypeError, match="must expose a callable register"):
+    with pytest.raises(TypeError, match="must expose register"):
         create_app()

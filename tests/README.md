@@ -25,17 +25,19 @@ before assuming a behavior is covered.
 
 | Module | Tested? | Notes |
 | --- | --- | --- |
-| `server.py` | Yes | `create_app()` discovery, `main()` wiring via mocks, `TypeError` guard for modules missing `register`, `instructions` non-empty |
+| `server.py` | Yes | `create_app()` discovery, `main()` wiring via mocks, `TypeError` guard for modules missing `register`, `instructions` non-empty; registration gate (no key → 2 tools, key set → 3 tools) |
 | `tools/__init__.py` | Yes (indirect) | Imported via `create_app()`; 100% coverage |
 | `tools/points_url.py` | Yes | Tool list, description, annotations, schema (no zoom field), happy path, empty-points error, empty-label error |
 | `tools/route_url.py` | Yes | Tool list, description, annotations, docs-example exact URL, waypoints (0/1/15/16), 16-waypoint error |
+| `tools/find_places.py` | Yes | Registration gate (absent without key, present with key), schema/annotations, single-query happy path, batch ordering, `near` → `preferNear` forwarding, partial failure (no raise), all-failure → `ToolError`, `language` forwarded as `lang` |
+| `geocoding.py` | Yes (indirect) | All four Pydantic models exercised through `mapy_client` and `find_places` tests; 100% coverage |
+| `mapy_client.py` | Yes | Happy path (1 and N matches), empty result, zip field, apikey as query param (not header), query/lang/limit defaults, `preferNear` format (`lon,lat`), preferNear absent when not passed, 401/403/500/503 error mapping, 422 with body, 4xx body truncation at 200 chars |
 | `_uc_encoder.py` | Yes | Empty input, known Prague fixture, all three branches (small/medium/absolute) of `_serialize_number`, alphabet membership, 50-point stress case |
 | `urls.py` | Yes | All five mapsets (English in showmap, Czech path in vlastni-body), all five languages (query param in showmap, path prefix in vlastni-body), all seven zoom buckets, label/description encoding (multi-point path), `ut=`/`ud=` ordering, center calculation, 50-point stress case, `ToolError` on empty points, 16-waypoint `ToolError`, all six route types, mapset auto-derivation, single-point/multi-point dispatch boundary |
-| `mapy_client.py` | — | Does not exist yet |
 
 ## Known gaps
 
-- `mapy_client.py` doesn't exist yet; once it does, its tests are the most
-  important to maintain (it's the only HTTP boundary, so its correctness
-  underpins everything else). `respx` is already installed as a dev
-  dependency for that future work.
+- `mapy_client._get_user_agent()` lines 23-24 (the `PackageNotFoundError` fallback)
+  are not covered because the package is always installed in the test environment.
+  The fallback returns "mapy-com-mcp/0.0.0" — not worth mocking `importlib.metadata`
+  for a version string.

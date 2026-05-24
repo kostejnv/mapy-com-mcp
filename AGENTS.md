@@ -152,14 +152,40 @@ Before declaring "done", the main agent **must**:
    actionable feedback.
 2. **Invoke `review-agent`** (`subagent_type: review-agent`) with the same
    brief. review-agent returns text feedback only.
-3. **Surface review-agent's feedback to the user verbatim** (or summarized
-   faithfully) and discuss it before applying anything. The main agent does
-   not silently apply review-agent suggestions, and does not silently
-   dismiss them. The user is the arbiter — for each `must_fix` /
-   `should_fix` item, the main agent states its own take (agree / disagree
-   / propose alternative) and waits for the user's call.
-4. **Apply whatever the user agreed to.** If non-trivial code changed,
-   re-invoke test-agent and review-agent as needed.
+3. **Review-agent's output is a checklist, not a gate.** Each `must_fix`
+   / `should_fix` item is a suggestion of something the main agent may
+   have overlooked. The main agent reads each item, decides yes/no using
+   its own judgment (anchored by the *Working principles* above —
+   smallest viable thing, no over-engineering, root cause not bypass),
+   and:
+   - **Yes** → apply directly, regardless of whether the change is
+     docstring-level or behavior-level. The diff is the audit trail.
+   - **No** → don't apply. Save for the end-of-turn rejection brief with
+     a one-line reason.
+
+   There is no "uncertain" bucket. The main agent commits to yes or no
+   per item. If a suggestion genuinely depends on context the main agent
+   doesn't have (e.g. a product call only the user can make), classify
+   it as **no** and flag it in the brief as an open question — never
+   silently apply something the main agent isn't sure about.
+
+   **Exception — policy violations.** Some `must_fix` items are not
+   judgment calls: leaked secrets, AI attribution in commits/PRs, tests
+   modified by the main agent (when test-agent owns `tests/`), and
+   anything else `block`-rated by review-agent for hard-rule reasons.
+   On those, yes is the only valid call.
+4. **Re-invoke test-agent** if any applied yes-item changed runtime
+   behavior. Re-invoke review-agent only if a follow-up round of work
+   (e.g. user-requested rejections that the main agent then applies)
+   introduced substantive new code worth a second pass.
+5. **End-of-turn rejection brief.** Report to the user only the items
+   the main agent **didn't** apply, with one line of reasoning each.
+   Applied items live in the diff — the user reads it if they want to
+   audit. If the user reads the brief and disagrees with a rejection
+   ("you should have applied that one"), the main agent applies it.
+
+   Items the main agent skipped or dismissed without surfacing them in
+   this brief still count as silent dismissal and are not allowed.
 
 ### Boundaries
 

@@ -96,7 +96,7 @@ range the main agent's brief specifies) and check, in roughly this order:
 ```
 verdict: ship | revise | block
   ship    = no blocking issues; minor suggestions optional
-  revise  = should_fix items the user should weigh in on, no hard blockers
+  revise  = should_fix items the main agent should consider, no hard blockers
   block   = must_fix items present (e.g. secrets leaked, AI attribution,
             tests modified by main agent)
 
@@ -114,8 +114,13 @@ notes:
   - <observation that isn't an issue but the main agent / user should know>
 ```
 
-Keep each item one or two sentences. The main agent will surface this list
-to the user verbatim or summarized faithfully — don't bury the lede.
+Keep each item one or two sentences. The main agent treats your output
+as a checklist of things it may have overlooked — it decides yes/no per
+item using its own judgment and surfaces only the rejected items to the
+user. Write items as concrete suggestions, not commands. Where an item
+is a judgment call rather than a clear standards / docs / policy
+violation, say so explicitly so the main agent can weigh it accordingly.
+The full rule lives in `AGENTS.md` ("Multi-agent workflow").
 
 ## References
 

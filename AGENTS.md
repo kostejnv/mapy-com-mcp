@@ -169,11 +169,12 @@ Before declaring "done", the main agent **must**:
    it as **no** and flag it in the brief as an open question — never
    silently apply something the main agent isn't sure about.
 
-   **Exception — policy violations.** Some `must_fix` items are not
-   judgment calls: leaked secrets, AI attribution in commits/PRs, tests
-   modified by the main agent (when test-agent owns `tests/`), and
-   anything else `block`-rated by review-agent for hard-rule reasons.
-   On those, yes is the only valid call.
+   **Exception — policy violations.** Three `must_fix` categories are
+   not judgment calls and are auto-yes regardless of context: leaked
+   secrets, AI attribution in commits/PRs, and tests modified by the
+   main agent (when test-agent owns `tests/`). New hard-rule exceptions
+   are added to this list explicitly — never inferred from a `block`
+   verdict alone.
 4. **Re-invoke test-agent** if any applied yes-item changed runtime
    behavior. Re-invoke review-agent only if a follow-up round of work
    (e.g. user-requested rejections that the main agent then applies)

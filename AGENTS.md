@@ -152,43 +152,40 @@ Before declaring "done", the main agent **must**:
    actionable feedback.
 2. **Invoke `review-agent`** (`subagent_type: review-agent`) with the same
    brief. review-agent returns text feedback only.
-3. **Triage review-agent's feedback per item.** For each `must_fix` /
-   `should_fix` item, the main agent decides:
-   - **Agree** — apply directly. This bucket is intentionally narrow:
-     docstrings, comments, type annotations, formatting, renames, or
-     wording fixes that align the code with a canonical doc, a standard
-     codified in `AGENTS.md`/`pyproject.toml`, or an obvious typo.
-     **Anything that changes observable runtime behavior, public API
-     shape, architecture, tests, or dependencies is *not* an agree item**,
-     no matter how confident the main agent is.
-   - **Disagree** — the suggestion is wrong or out of scope (e.g.
-     contradicted by the canonical docs or the repo's working principles).
-     Do *not* apply. Save for the end-of-turn summary with reasoning.
-   - **Uncertain / propose alternative** — anything that isn't clearly
-     agree, including behavior-changing fixes the main agent thinks are
-     right. Do *not* apply. Save for the end-of-turn summary with the
-     alternative or open question.
+3. **Review-agent's output is a checklist, not a gate.** Each `must_fix`
+   / `should_fix` item is a suggestion of something the main agent may
+   have overlooked. The main agent reads each item, decides yes/no using
+   its own judgment (anchored by the *Working principles* above —
+   smallest viable thing, no over-engineering, root cause not bypass),
+   and:
+   - **Yes** → apply directly, regardless of whether the change is
+     docstring-level or behavior-level. The diff is the audit trail.
+   - **No** → don't apply. Save for the end-of-turn rejection brief with
+     a one-line reason.
 
-   When in doubt, treat as uncertain. Better to surface one extra item to
-   the user than to silently apply a bad fix.
-4. **Apply the agree items.** Because agree items by definition don't
-   change runtime behavior, test-agent is not re-invoked. If an item the
-   user later approves *does* change behavior, re-invoke test-agent after
-   applying it. Re-invoke review-agent only if the round of applied
-   changes (agree + user-approved) introduces substantive new code worth
-   a second pass.
-5. **End-of-turn summary.** Report to the user:
-   - A short list of `agree` items that were applied (what changed and
-     where) — so the user can audit. The user may ask the main agent to
-     revert any agree item at any time; no prior approval was required to
-     apply it, but the user's call always overrides.
-   - For every `disagree` / `uncertain` / alternative item: surface it
-     verbatim or summarized faithfully, with the main agent's reasoning,
-     and wait for the user's call. The user remains the arbiter for
-     these.
+   There is no "uncertain" bucket. The main agent commits to yes or no
+   per item. If a suggestion genuinely depends on context the main agent
+   doesn't have (e.g. a product call only the user can make), classify
+   it as **no** and flag it in the brief as an open question — never
+   silently apply something the main agent isn't sure about.
 
-   Skipping or dismissing review-agent items without including them in
-   this summary counts as silent dismissal and is not allowed.
+   **Exception — policy violations.** Some `must_fix` items are not
+   judgment calls: leaked secrets, AI attribution in commits/PRs, tests
+   modified by the main agent (when test-agent owns `tests/`), and
+   anything else `block`-rated by review-agent for hard-rule reasons.
+   On those, yes is the only valid call.
+4. **Re-invoke test-agent** if any applied yes-item changed runtime
+   behavior. Re-invoke review-agent only if a follow-up round of work
+   (e.g. user-requested rejections that the main agent then applies)
+   introduced substantive new code worth a second pass.
+5. **End-of-turn rejection brief.** Report to the user only the items
+   the main agent **didn't** apply, with one line of reasoning each.
+   Applied items live in the diff — the user reads it if they want to
+   audit. If the user reads the brief and disagrees with a rejection
+   ("you should have applied that one"), the main agent applies it.
+
+   Items the main agent skipped or dismissed without surfacing them in
+   this brief still count as silent dismissal and are not allowed.
 
 ### Boundaries
 

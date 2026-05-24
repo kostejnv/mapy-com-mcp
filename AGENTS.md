@@ -152,14 +152,43 @@ Before declaring "done", the main agent **must**:
    actionable feedback.
 2. **Invoke `review-agent`** (`subagent_type: review-agent`) with the same
    brief. review-agent returns text feedback only.
-3. **Surface review-agent's feedback to the user verbatim** (or summarized
-   faithfully) and discuss it before applying anything. The main agent does
-   not silently apply review-agent suggestions, and does not silently
-   dismiss them. The user is the arbiter — for each `must_fix` /
-   `should_fix` item, the main agent states its own take (agree / disagree
-   / propose alternative) and waits for the user's call.
-4. **Apply whatever the user agreed to.** If non-trivial code changed,
-   re-invoke test-agent and review-agent as needed.
+3. **Triage review-agent's feedback per item.** For each `must_fix` /
+   `should_fix` item, the main agent decides:
+   - **Agree** — apply directly. This bucket is intentionally narrow:
+     docstrings, comments, type annotations, formatting, renames, or
+     wording fixes that align the code with a canonical doc, a standard
+     codified in `AGENTS.md`/`pyproject.toml`, or an obvious typo.
+     **Anything that changes observable runtime behavior, public API
+     shape, architecture, tests, or dependencies is *not* an agree item**,
+     no matter how confident the main agent is.
+   - **Disagree** — the suggestion is wrong or out of scope (e.g.
+     contradicted by the canonical docs or the repo's working principles).
+     Do *not* apply. Save for the end-of-turn summary with reasoning.
+   - **Uncertain / propose alternative** — anything that isn't clearly
+     agree, including behavior-changing fixes the main agent thinks are
+     right. Do *not* apply. Save for the end-of-turn summary with the
+     alternative or open question.
+
+   When in doubt, treat as uncertain. Better to surface one extra item to
+   the user than to silently apply a bad fix.
+4. **Apply the agree items.** Because agree items by definition don't
+   change runtime behavior, test-agent is not re-invoked. If an item the
+   user later approves *does* change behavior, re-invoke test-agent after
+   applying it. Re-invoke review-agent only if the round of applied
+   changes (agree + user-approved) introduces substantive new code worth
+   a second pass.
+5. **End-of-turn summary.** Report to the user:
+   - A short list of `agree` items that were applied (what changed and
+     where) — so the user can audit. The user may ask the main agent to
+     revert any agree item at any time; no prior approval was required to
+     apply it, but the user's call always overrides.
+   - For every `disagree` / `uncertain` / alternative item: surface it
+     verbatim or summarized faithfully, with the main agent's reasoning,
+     and wait for the user's call. The user remains the arbiter for
+     these.
+
+   Skipping or dismissing review-agent items without including them in
+   this summary counts as silent dismissal and is not allowed.
 
 ### Boundaries
 

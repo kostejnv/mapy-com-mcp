@@ -114,8 +114,13 @@ notes:
   - <observation that isn't an issue but the main agent / user should know>
 ```
 
-Keep each item one or two sentences. The main agent will surface this list
-to the user verbatim or summarized faithfully — don't bury the lede.
+Keep each item one or two sentences. The main agent applies items it
+clearly agrees with and surfaces the rest (disagreements, alternatives,
+uncertain calls) to the user for arbitration — so don't bury the lede on
+anything that's debatable or contradicts the docs. Where an item is a
+judgment call rather than a clear standards or docs violation, say so
+explicitly so the main agent triages it as uncertain rather than agree.
+The full triage rule lives in `AGENTS.md` ("Multi-agent workflow").
 
 ## References
 

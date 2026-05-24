@@ -13,7 +13,7 @@ MCP server that gives LLM clients first-class access to [mapy.com](https://mapy.
 </div>
 
 > [!WARNING]
-> **Early preview.** The first URL-builder tools have shipped (see below); REST-API tools and hosted deployment land in later milestones. Expect the public surface to grow.
+> **Early preview.** URL-builder tools and the first REST-API tool (`find_places`) have shipped (see below); more REST tools and hosted deployment land in later milestones. Expect the public surface to grow.
 
 > [!NOTE]
 > **Unofficial.** Not affiliated with, endorsed by, or supported by Seznam.cz a.s., operators of mapy.com. Trademarks belong to their respective owners.
@@ -24,12 +24,30 @@ LLMs are good at recommending places and itineraries, but bad at anything requir
 
 ## Available tools
 
-| Tool | What it does |
-|---|---|
-| `build_points_url` | Builds a mapy.com URL that opens the map showing one or more labeled points. The general-purpose "show me on the map" tool — single place or many, the operation is the same. Auto-fits the zoom to the points. |
-| `build_route_url` | Builds a mapy.com URL that opens a planned route between two points (with optional waypoints). Map style is auto-derived from the chosen transport mode (car / foot / bike). |
+| Tool | What it does | Needs API key |
+|---|---|---|
+| `build_points_url` | Builds a mapy.com URL that opens the map showing one or more labeled points. The general-purpose "show me on the map" tool — single place or many, the operation is the same. Auto-fits the zoom to the points. | No |
+| `build_route_url` | Builds a mapy.com URL that opens a planned route between two points (with optional waypoints). Map style is auto-derived from the chosen transport mode (car / foot / bike). | No |
+| `find_places` | Resolves human-readable place references (names, addresses, POIs) to WGS84 coordinates via the mapy.com REST API. Accepts a batch of queries and an optional `near` hint for disambiguation. Feed the result into `build_points_url` / `build_route_url`. | Yes |
 
-Both tools are pure URL builders — no API key, no HTTP calls. The user clicks the returned URL and mapy.com renders the result.
+URL-builder tools are pure — no HTTP calls, no key. `find_places` calls the mapy.com REST API and is only registered when `MAPY_API_KEY` is set in the environment.
+
+## Configuration
+
+Set `MAPY_API_KEY` in the environment when you want the REST tools. Get a free key from the [mapy.com developer portal](https://developer.mapy.com/account/). With the key unset, the server runs with only the URL-builder tools.
+
+```jsonc
+// Example: Claude Desktop / Claude Code MCP config
+{
+  "mcpServers": {
+    "mapy-com": {
+      "command": "uvx",
+      "args": ["mapy-com-mcp"],
+      "env": { "MAPY_API_KEY": "your-key-here" }
+    }
+  }
+}
+```
 
 ## License
 

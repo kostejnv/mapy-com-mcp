@@ -11,7 +11,7 @@ from ..urls import Language, RouteType
 from ..urls import build_route_url as _compose_url
 
 
-def register(mcp: FastMCP) -> None:
+def register(mcp: FastMCP, **_: object) -> None:
     def build_route_url(
         start_lon: Annotated[
             float,

@@ -8,7 +8,7 @@ from urllib.parse import quote
 from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, Field
 
-from ._uc_encoder import encode_uc
+from .uc_encoder import encode_uc
 
 Language = Literal["en", "cs", "sk", "de", "pl"]
 PointsMapset = Literal["outdoor", "traffic", "winter", "aerial", "basic"]

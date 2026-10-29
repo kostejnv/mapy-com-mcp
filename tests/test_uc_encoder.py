@@ -1,10 +1,10 @@
-"""Tests for _uc_encoder.py — delta-encoded coordinate stream for mapy.com."""
+"""Tests for links/uc_encoder.py — delta-encoded coordinate stream for mapy.com."""
 
 from __future__ import annotations
 
 import pytest
 
-from mapy_com_mcp._uc_encoder import (
+from mapy_com_mcp.links.uc_encoder import (
     _ALPHABET,  # type: ignore[reportPrivateUsage]
     _serialize_number,  # type: ignore[reportPrivateUsage]
     encode_uc,

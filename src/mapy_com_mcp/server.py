@@ -10,7 +10,7 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from fastmcp import FastMCP
 
 from . import tools
-from .mapy_client import MapyClient
+from .mapy_api.client import MapyClient
 
 _LOG = logging.getLogger(__name__)
 

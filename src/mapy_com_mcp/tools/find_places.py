@@ -9,9 +9,9 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from pydantic import Field
 
-from ..geocoding import GeocodeQuery, GeocodeQueryResult
-from ..mapy_client import MapyClient
-from ..urls import Language
+from ..links.urls import Language
+from ..mapy_api.client import MapyClient
+from ..mapy_api.geocoding import GeocodeQuery, GeocodeQueryResult
 
 _PER_QUERY_LIMIT = 5
 

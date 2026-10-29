@@ -48,7 +48,7 @@ class GeocodeMatch(BaseModel):
         description=(
             "Matched entity name as returned by mapy.com (e.g. 'Karlův most', "
             "'Týnská ulička 610/7'). Suitable as a marker label when feeding "
-            "into build_points_url."
+            "into show_places."
         ),
     )
     label: str = Field(

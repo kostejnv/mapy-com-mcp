@@ -13,7 +13,7 @@ MCP server that gives LLM clients first-class access to [mapy.com](https://mapy.
 </div>
 
 > [!WARNING]
-> **Early preview.** URL-builder tools and the first REST-API tool (`find_places`) have shipped (see below); more REST tools and hosted deployment land in later milestones. Expect the public surface to grow.
+> **Early preview.** Place search (`find_places`), points on a map (`show_places`) and route links (`build_route_url`) have shipped (see below); route planning with a map image and hosted deployment land in later milestones. Expect the public surface to change.
 
 > [!NOTE]
 > **Unofficial.** Not affiliated with, endorsed by, or supported by Seznam.cz a.s., operators of mapy.com. Trademarks belong to their respective owners.
@@ -26,15 +26,15 @@ LLMs are good at recommending places and itineraries, but bad at anything requir
 
 | Tool | What it does | Needs API key |
 |---|---|---|
-| `build_points_url` | Builds a mapy.com URL that opens the map showing one or more labeled points. The general-purpose "show me on the map" tool — single place or many, the operation is the same. Auto-fits the zoom to the points. | No |
+| `show_places` | Shows one or more labeled points on a map. Returns a mapy.com link for the user and — with an API key — a map image the model can look at: numbered markers and a coordinate grid for reading positions and distances. `output` picks `url`, `map` or `both`. Area and zoom are fitted to the points automatically. | Image only |
 | `build_route_url` | Builds a mapy.com URL that opens a planned route between two points (with optional waypoints). Map style is auto-derived from the chosen transport mode (car / foot / bike). | No |
-| `find_places` | Resolves human-readable place references (names, addresses, POIs) to WGS84 coordinates via the mapy.com REST API. Accepts a batch of queries and an optional `near` hint for disambiguation. Feed the result into `build_points_url` / `build_route_url`. | Yes |
+| `find_places` | Resolves human-readable place references (names, addresses, POIs) to WGS84 coordinates via the mapy.com REST API. Accepts a batch of queries and an optional `near` hint for disambiguation. Feed the result into `show_places` / `build_route_url`. | Yes |
 
-URL-builder tools are pure — no HTTP calls, no key. `find_places` calls the mapy.com REST API and is only registered when `MAPY_API_KEY` is set in the environment.
+Links need no key. Map images and `find_places` call the mapy.com REST API, so they are only available when `MAPY_API_KEY` is set in the environment; without it, `show_places` returns just the link.
 
 ## Configuration
 
-Set `MAPY_API_KEY` in the environment when you want the REST tools. Get a free key from the [mapy.com developer portal](https://developer.mapy.com/account/). With the key unset, the server runs with only the URL-builder tools.
+Set `MAPY_API_KEY` in the environment when you want map images and `find_places`. Get a free key from the [mapy.com developer portal](https://developer.mapy.com/account/). With the key unset, the server still runs and returns mapy.com links.
 
 ```jsonc
 // Example: Claude Desktop / Claude Code MCP config

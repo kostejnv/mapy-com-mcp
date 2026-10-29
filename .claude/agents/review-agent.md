@@ -33,7 +33,7 @@ range the main agent's brief specifies) and check, in roughly this order:
      Flag immediately if found.
 
 2. **Architectural boundaries (per `.context/architecture.md`).**
-   - Tools call `mapy_client.py`, not `httpx` directly.
+   - Tools call `mapy_api/`, not `httpx` directly.
    - One file per tool in `src/mapy_com_mcp/tools/`.
    - `src/` layout respected; nothing leaks outside it.
    - No new top-level dependency without an entry in

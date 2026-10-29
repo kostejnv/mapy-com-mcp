@@ -1,6 +1,6 @@
 """Pydantic models for the mapy.com forward-geocoding API.
 
-Used by both `mapy_client.MapyClient.geocode` and the `find_places` tool.
+Used by both `mapy_api.client.MapyClient.geocode` and the `find_places` tool.
 Field descriptions are written for LLM consumption — FastMCP surfaces them
 in the tool schema.
 """

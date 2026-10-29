@@ -18,8 +18,11 @@ For the public pitch and quickstart, read `README.md`.
 src/mapy_com_mcp/
   __init__.py
   server.py          # FastMCP entry, main(), tool auto-registration
-  mapy_client.py     # the only place that talks to mapy.com over HTTP
-  tools/             # one file per MCP tool
+  tools/             # one file per MCP tool — thin MCP wrappers
+  mapy_api/          # the only place that talks to mapy.com over HTTP
+    client.py        #   HTTP client (auth, timeouts, error mapping)
+    geocoding.py     #   geocoding request/response models
+  links/             # pure mapy.com URL builders (no HTTP, no key)
 tests/               # pytest, mocked HTTP via respx
 ```
 
@@ -28,7 +31,7 @@ Conventions tied to this layout:
 - `src/` layout, not flat. Tests must import the installed package, not the
   working directory.
 - One file per tool in `tools/`. Auto-registered in `server.py`.
-- `mapy_client.py` is the only HTTP boundary. Tools never make raw `httpx`
+- `mapy_api/` is the only HTTP boundary. Tools never make raw `httpx`
   calls — auth, retries, and error mapping live in one place.
 - `tests/` lives outside `src/`. Coverage targets `src/mapy_com_mcp`.
 

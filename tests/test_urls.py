@@ -1,4 +1,4 @@
-"""Tests for urls.py — build_points_url and build_route_url pure URL builders."""
+"""Tests for links/urls.py — build_points_url and build_route_url pure URL builders."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import pytest
 from fastmcp.exceptions import ToolError
 from pydantic import ValidationError
 
-from mapy_com_mcp.urls import Point, build_points_url, build_route_url
+from mapy_com_mcp.links.urls import Point, build_points_url, build_route_url
 
 # ---------------------------------------------------------------------------
 # Helpers

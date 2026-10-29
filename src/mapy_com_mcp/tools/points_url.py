@@ -7,8 +7,8 @@ from typing import Annotated
 from fastmcp import FastMCP
 from pydantic import Field
 
-from ..urls import Language, Point, PointsMapset
-from ..urls import build_points_url as _compose_url
+from ..links.urls import Language, Point, PointsMapset
+from ..links.urls import build_points_url as _compose_url
 
 
 def register(mcp: FastMCP, **_: object) -> None:

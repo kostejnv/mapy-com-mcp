@@ -1,4 +1,4 @@
-"""Tests for mapy_client.py — MapyClient HTTP boundary.
+"""Tests for mapy_api/client.py — MapyClient HTTP boundary.
 
 All HTTP is mocked with respx; no real network calls are made.
 """
@@ -9,8 +9,8 @@ import pytest
 import respx
 from httpx import Response
 
-from mapy_com_mcp.geocoding import GeocodeMatch
-from mapy_com_mcp.mapy_client import MapyAPIError, MapyClient
+from mapy_com_mcp.mapy_api.client import MapyAPIError, MapyClient
+from mapy_com_mcp.mapy_api.geocoding import GeocodeMatch
 
 # ---------------------------------------------------------------------------
 # Fixtures

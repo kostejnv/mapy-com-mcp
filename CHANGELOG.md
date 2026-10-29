@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.0](https://github.com/kostejnv/mapy-com-mcp/compare/mapy-com-mcp-v0.1.0...mapy-com-mcp-v0.2.0) (2026-10-29)
+
+
+### Features
+
+* **tools:** add find_places geocoding tool ([#16](https://github.com/kostejnv/mapy-com-mcp/issues/16)) ([f478c4c](https://github.com/kostejnv/mapy-com-mcp/commit/f478c4c241954059f3011b7eff1f2ff47994f35a))
+
+
+### Documentation
+
+* **agents:** main agent decides; surface only rejections ([#17](https://github.com/kostejnv/mapy-com-mcp/issues/17)) ([bd0590f](https://github.com/kostejnv/mapy-com-mcp/commit/bd0590f992fac72b4d18fe86bf7fbbc1698a86d7))
+* **agents:** tighten auto-yes list; add JUDGMENT CALL prefix ([#18](https://github.com/kostejnv/mapy-com-mcp/issues/18)) ([d085ac5](https://github.com/kostejnv/mapy-com-mcp/commit/d085ac534a7e604ecdccd56aa613642eef5154c7))
+
 ## 0.1.0 (2026-05-09)
 
 

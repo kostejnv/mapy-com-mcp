@@ -39,13 +39,47 @@ def test_create_app_instructions_is_non_empty() -> None:
     assert mcp.instructions and mcp.instructions.strip()
 
 
-def test_main_calls_create_app_and_run() -> None:
-    """main() must call create_app() and invoke mcp.run() exactly once."""
+@pytest.mark.parametrize("argv", [None, []])
+def test_main_defaults_to_stdio(
+    argv: list[str] | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With no flags main() runs stdio and passes no host/port."""
+    monkeypatch.setattr("sys.argv", ["mapy-com-mcp"])
     mock_mcp = MagicMock()
     with patch("mapy_com_mcp.server.create_app", return_value=mock_mcp) as mock_create:
-        main()
+        main(argv)
         mock_create.assert_called_once_with()
-        mock_mcp.run.assert_called_once_with()
+        mock_mcp.run.assert_called_once_with(transport="stdio")
+
+
+def test_main_streamable_http_forwards_host_and_port() -> None:
+    mock_mcp = MagicMock()
+    with patch("mapy_com_mcp.server.create_app", return_value=mock_mcp):
+        main(["--transport", "streamable-http", "--host", "0.0.0.0", "--port", "9000"])
+        mock_mcp.run.assert_called_once_with(
+            transport="streamable-http", host="0.0.0.0", port=9000
+        )
+
+
+def test_main_streamable_http_uses_default_host_and_port() -> None:
+    mock_mcp = MagicMock()
+    with patch("mapy_com_mcp.server.create_app", return_value=mock_mcp):
+        main(["--transport", "streamable-http"])
+        mock_mcp.run.assert_called_once_with(
+            transport="streamable-http", host="127.0.0.1", port=8000
+        )
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [["--transport", "sse"], ["--transport", "streamable-http", "--port", "abc"]],
+)
+def test_main_rejects_invalid_args_before_creating_app(argv: list[str]) -> None:
+    with patch("mapy_com_mcp.server.create_app") as mock_create:
+        with pytest.raises(SystemExit) as exc:
+            main(argv)
+    assert exc.value.code == 2
+    mock_create.assert_not_called()
 
 
 def _make_iter_modules_stub(

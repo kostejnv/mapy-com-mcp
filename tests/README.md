@@ -25,7 +25,7 @@ before assuming a behavior is covered.
 
 | Module | Tested? | Notes |
 | --- | --- | --- |
-| `server.py` | Yes | `create_app()` discovery, `main()` wiring via mocks, `TypeError` guard for modules missing `register`, `instructions` non-empty; registration gate (no key → 2 tools, key set → 3 tools) |
+| `server.py` | Yes | `create_app()` discovery, `main()` CLI parsing and wiring via mocks (default stdio, streamable-http with/without host/port, invalid transport/port → exit 2 before `create_app`), `TypeError` guard for modules missing `register`, `instructions` non-empty; registration gate (no key → 2 tools, key set → 3 tools) |
 | `tools/__init__.py` | Yes (indirect) | Imported via `create_app()`; 100% coverage |
 | `tools/points_url.py` | Yes | Tool list, description, annotations, schema (no zoom field), happy path, empty-points error, empty-label error |
 | `tools/route_url.py` | Yes | Tool list, description, annotations, docs-example exact URL, waypoints (0/1/15/16), 16-waypoint error |

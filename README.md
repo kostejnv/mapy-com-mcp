@@ -49,6 +49,16 @@ Set `MAPY_API_KEY` in the environment when you want the REST tools. Get a free k
 }
 ```
 
+### Transports
+
+The server speaks stdio by default, which is what local MCP clients expect. To serve it over [Streamable HTTP](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#streamable-http) instead:
+
+```bash
+uvx mapy-com-mcp --transport streamable-http --host 127.0.0.1 --port 8000
+```
+
+The MCP endpoint is then `http://127.0.0.1:8000/mcp`. The server has no authentication, so binding `--host` to anything other than loopback exposes your `MAPY_API_KEY` quota to whoever can reach it.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

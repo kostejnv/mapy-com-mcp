@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.0](https://github.com/kostejnv/mapy-com-mcp/compare/mapy-com-mcp-v0.2.0...mapy-com-mcp-v0.3.0) (2026-10-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* **tools:** replace build_points_url with show_places ([#28](https://github.com/kostejnv/mapy-com-mcp/issues/28))
+
+### Features
+
+* **tools:** replace build_points_url with show_places ([#28](https://github.com/kostejnv/mapy-com-mcp/issues/28)) ([a6770a1](https://github.com/kostejnv/mapy-com-mcp/commit/a6770a10ec651c48e9ae4ab6afbbb81c6e7d4000))
+
 ## [0.2.0](https://github.com/kostejnv/mapy-com-mcp/compare/mapy-com-mcp-v0.1.0...mapy-com-mcp-v0.2.0) (2026-10-29)
 
 

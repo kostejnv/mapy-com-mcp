@@ -2,7 +2,7 @@
 
 # mapy-com-mcp
 
-MCP server that gives LLM clients first-class access to [mapy.com](https://mapy.com) — a Czech mapping service with strong route planning and static map rendering.
+MCP server that lets LLMs find places, look at them on a real map, and hand the user a [mapy.com](https://mapy.com) link to the same view.
 
 [![PyPI version](https://img.shields.io/pypi/v/mapy-com-mcp?style=flat-square&include_prereleases)](https://pypi.org/project/mapy-com-mcp/)
 [![Python versions](https://img.shields.io/pypi/pyversions/mapy-com-mcp?style=flat-square&include_prereleases)](https://pypi.org/project/mapy-com-mcp/)
@@ -13,14 +13,19 @@ MCP server that gives LLM clients first-class access to [mapy.com](https://mapy.
 </div>
 
 > [!WARNING]
-> **Early preview.** Place search (`find_places`), points on a map (`show_places`) and route links (`build_route_url`) have shipped (see below); route planning with a map image and hosted deployment land in later milestones. Expect the public surface to change.
+> **Preview.** Place search, places on a map and route links work today (see below). Route planning with a map image is next, so tool names and parameters may still change.
 
 > [!NOTE]
 > **Unofficial.** Not affiliated with, endorsed by, or supported by Seznam.cz a.s., operators of mapy.com. Trademarks belong to their respective owners.
 
 ## Why
 
-LLMs are good at recommending places and itineraries, but bad at anything requiring real spatial understanding — distances, walkability, what's near what. This MCP closes that gap by letting LLMs surface a clickable mapy.com link the user can open to *see* the recommendation on a real map.
+LLMs are good at recommending places and itineraries, but bad at anything requiring real spatial understanding — distances, walkability, what's near what. This server closes that gap from both sides:
+
+- **The model checks its work.** With a mapy.com API key, `find_places` turns names into real coordinates, so suggestions are grounded in actual places. `show_places` then returns a map image with numbered markers and a coordinate grid, so the model can *see* how the places relate before it answers.
+- **The user gets a map, not just text.** `show_places` hands the user a mapy.com link that opens the same places at the same zoom.
+
+Built on [mapy.com](https://mapy.com), the Czech mapping service from Seznam.cz — especially strong in the Czech Republic and the surrounding region.
 
 ## Available tools
 

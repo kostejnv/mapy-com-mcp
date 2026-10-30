@@ -7,7 +7,7 @@ call httpx directly — auth, timeouts, error mapping live here.
 from __future__ import annotations
 
 from importlib.metadata import PackageNotFoundError, version
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 
@@ -15,6 +15,8 @@ from .geocoding import GeocodeMatch
 
 _DEFAULT_BASE_URL = "https://api.mapy.com"
 _DEFAULT_TIMEOUT_SECONDS = 10.0
+
+StaticMapset = Literal["basic", "outdoor", "winter", "aerial"]
 
 
 def _get_user_agent() -> str:
@@ -88,6 +90,45 @@ class MapyClient:
             raise MapyAPIError(resp.status_code, resp.text[:200])
 
         return [_parse_match(item) for item in resp.json().get("items", [])]
+
+    async def static_map(
+        self,
+        *,
+        lon: float,
+        lat: float,
+        zoom: int,
+        width: int,
+        height: int,
+        mapset: StaticMapset,
+        lang: str,
+    ) -> bytes:
+        """Fetch a PNG map image centered on (lon, lat) at the given zoom.
+
+        Raises MapyAPIError on 4xx/5xx responses. httpx exceptions (timeout,
+        connection error) propagate to the caller.
+        """
+        params: dict[str, Any] = {
+            "apikey": self._api_key,
+            "lon": lon,
+            "lat": lat,
+            "zoom": zoom,
+            "width": width,
+            "height": height,
+            "mapset": mapset,
+            "lang": lang,
+            "format": "png",
+        }
+
+        resp = await self._client.get("/v1/static/map", params=params)
+
+        if resp.status_code in (401, 403):
+            raise MapyAPIError(resp.status_code, "API key invalid or unauthorized")
+        if resp.status_code >= 500:
+            raise MapyAPIError(resp.status_code, "mapy.com static map service error")
+        if resp.status_code >= 400:
+            raise MapyAPIError(resp.status_code, resp.text[:200])
+
+        return resp.content
 
     async def aclose(self) -> None:
         await self._client.aclose()

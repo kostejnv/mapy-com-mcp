@@ -262,3 +262,63 @@ async def test_geocode_4xx_body_truncated_at_200(client: MapyClient) -> None:
 
     err = exc_info.value
     assert len(err.message) <= 200 + 50  # allow for "status: " prefix overhead
+
+
+# ---------------------------------------------------------------------------
+# static_map
+# ---------------------------------------------------------------------------
+
+_STATIC_URL = "https://api.mapy.com/v1/static/map"
+_STATIC_KWARGS = {
+    "lon": 14.4,
+    "lat": 50.08,
+    "zoom": 14,
+    "width": 1024,
+    "height": 640,
+    "mapset": "outdoor",
+    "lang": "en",
+}
+
+
+@respx.mock
+async def test_static_map_returns_response_bytes(client: MapyClient) -> None:
+    respx.get(_STATIC_URL).mock(return_value=Response(200, content=b"\x89PNGdata"))
+    assert await client.static_map(**_STATIC_KWARGS) == b"\x89PNGdata"  # type: ignore[arg-type]  # dict of kwargs
+
+
+@respx.mock
+async def test_static_map_sends_all_query_params(client: MapyClient) -> None:
+    route = respx.get(_STATIC_URL).mock(return_value=Response(200, content=b"x"))
+    await client.static_map(**{**_STATIC_KWARGS, "lang": "cs"})  # type: ignore[arg-type]  # dict of kwargs
+    params = route.calls.last.request.url.params
+    assert params["apikey"] == _API_KEY
+    assert params["lon"] == "14.4"
+    assert params["lat"] == "50.08"
+    assert params["zoom"] == "14"
+    assert params["width"] == "1024"
+    assert params["height"] == "640"
+    assert params["mapset"] == "outdoor"
+    assert params["lang"] == "cs"
+    assert params["format"] == "png"
+    assert "apikey" not in route.calls.last.request.headers
+
+
+@respx.mock
+@pytest.mark.parametrize("status", [401, 403, 500, 503])
+async def test_static_map_auth_and_server_errors_raise_mapy_api_error(
+    client: MapyClient, status: int
+) -> None:
+    respx.get(_STATIC_URL).mock(return_value=Response(status))
+    with pytest.raises(MapyAPIError) as exc_info:
+        await client.static_map(**_STATIC_KWARGS)  # type: ignore[arg-type]  # dict of kwargs
+    assert exc_info.value.status == status
+
+
+@respx.mock
+async def test_static_map_other_4xx_includes_truncated_body(client: MapyClient) -> None:
+    respx.get(_STATIC_URL).mock(return_value=Response(422, text="bad zoom " * 100))
+    with pytest.raises(MapyAPIError) as exc_info:
+        await client.static_map(**_STATIC_KWARGS)  # type: ignore[arg-type]  # dict of kwargs
+    assert exc_info.value.status == 422
+    assert "bad zoom" in str(exc_info.value)
+    assert len(str(exc_info.value)) < 300

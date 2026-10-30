@@ -8,6 +8,7 @@ from urllib.parse import quote
 from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, Field
 
+from ..static_map.viewport import Viewport
 from .uc_encoder import encode_uc
 
 Language = Literal["en", "cs", "sk", "de", "pl"]
@@ -55,52 +56,28 @@ class Point(BaseModel):
     )
 
 
-def _auto_fit_zoom(points: list[Point]) -> int:
-    """Pick a zoom level that fits all points with margin.
-
-    Single point falls back to 13 (neighborhood-level), the default for
-    'show me where this is'. Multiple points use the larger of lon/lat
-    bounding-box span to drop into the right zoom bucket.
-    """
-    if len(points) == 1:
-        return 13
-    lon_span = max(p.lon for p in points) - min(p.lon for p in points)
-    lat_span = max(p.lat for p in points) - min(p.lat for p in points)
-    span = max(lon_span, lat_span)
-    if span > 20:
-        return 5
-    if span > 5:
-        return 8
-    if span > 1:
-        return 11
-    if span > 0.1:
-        return 13
-    if span > 0.02:
-        return 15
-    if span > 0.005:
-        return 17
-    return 19
-
-
 def build_points_url(
     points: list[Point],
+    viewport: Viewport,
     mapset: PointsMapset = "outdoor",
     language: Language = "en",
 ) -> str:
     """Compose a mapy.com URL that opens the map showing labeled points.
 
-    Pure function — no HTTP, no API key. Map zoom is chosen automatically
-    so all points fit. Raises ToolError on empty input.
+    Pure function — no HTTP, no API key. Center and zoom come from
+    `viewport`, the same one the static map image uses. Raises ToolError on
+    empty input.
     """
     if not points:
         raise ToolError("points must contain at least one point.")
     if len(points) == 1:
-        return _build_single_point_url(points[0], mapset, language)
-    return _build_multi_point_url(points, mapset, language)
+        return _build_single_point_url(points[0], viewport, mapset, language)
+    return _build_multi_point_url(points, viewport, mapset, language)
 
 
 def _build_single_point_url(
     point: Point,
+    viewport: Viewport,
     mapset: PointsMapset,
     language: Language,
 ) -> str:
@@ -111,9 +88,11 @@ def _build_single_point_url(
     `point.description` are not rendered — they still serve as inputs the
     LLM is forced to think about.
     """
+    # showmap draws its marker at the map center, so center stays on the
+    # point; only the zoom comes from the shared viewport.
     parts = [
         f"center={point.lon},{point.lat}",
-        f"zoom={_auto_fit_zoom([point])}",
+        f"zoom={viewport.zoom}",
         "marker=true",
         f"mapset={mapset}",
         f"lang={language}",
@@ -123,28 +102,27 @@ def _build_single_point_url(
 
 def _build_multi_point_url(
     points: list[Point],
+    viewport: Viewport,
     mapset: PointsMapset,
     language: Language,
 ) -> str:
     """Compose the legacy `vlastni-body` URL for two or more points.
 
     Undocumented but the only mapy.com URL pattern that renders multiple
-    custom markers with labels and descriptions.
+    custom markers with labels and descriptions. Marker titles are numbered
+    to match the markers in the static map image.
     """
-    center_lon = round(sum(p.lon for p in points) / len(points), 6)
-    center_lat = round(sum(p.lat for p in points) / len(points), 6)
-    zoom = _auto_fit_zoom(points)
     uc = encode_uc([(p.lon, p.lat) for p in points])
 
     parts: list[str] = ["vlastni-body"]
-    for p in points:
-        parts.append("ut=" + quote(p.label))
+    for number, p in enumerate(points, start=1):
+        parts.append("ut=" + quote(f"{number}. {p.label}"))
     parts.append("uc=" + quote(uc))
     for p in points:
         parts.append("ud=" + quote(p.description or ""))
-    parts.append(f"x={center_lon}")
-    parts.append(f"y={center_lat}")
-    parts.append(f"z={zoom}")
+    parts.append(f"x={round(viewport.center_lon, 6)}")
+    parts.append(f"y={round(viewport.center_lat, 6)}")
+    parts.append(f"z={viewport.zoom}")
     return f"https://mapy.com/{language}/{_LEGACY_PATH[mapset]}?" + "&".join(parts)
 
 

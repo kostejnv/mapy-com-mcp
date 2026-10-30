@@ -68,7 +68,7 @@ def register(mcp: FastMCP, **_: object) -> None:
         automatically from route_type (car_* uses traffic, foot_*/bike_*
         use outdoor); the LLM does not pick it.
 
-        Do NOT use this to merely show places on a map (use build_points_url).
+        Do NOT use this to merely show places on a map (use show_places).
         Do NOT pass more than 15 waypoints — mapy.com will reject them.
 
         The map auto-fits to the route, so there is no zoom parameter.

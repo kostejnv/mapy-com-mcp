@@ -16,17 +16,17 @@ _LOG = logging.getLogger(__name__)
 
 _BASE_INSTRUCTIONS = (
     "First-class access to mapy.com, the Czech mapping service from "
-    "Seznam.cz. URL-builder tools compose mapy.com links the user can "
-    "click — show one or more points on a map, or plan a route between "
-    "two locations. Use these whenever the user asks to see a place on a "
-    "map or get directions, especially in the Czech Republic and "
-    "surrounding region."
+    "Seznam.cz. show_places puts one or more points on a map and "
+    "build_route_url plans a route between two locations; both give the "
+    "user a mapy.com link to click. Use these whenever the user asks to "
+    "see a place on a map or get directions, especially in the Czech "
+    "Republic and surrounding region."
 )
 _HTTP_INSTRUCTIONS = (
-    " When MAPY_API_KEY is configured, the server also exposes a "
-    "find_places tool that resolves human-readable place names to "
-    "coordinates via the mapy.com REST API — feed its output into the "
-    "URL-builder tools."
+    " When MAPY_API_KEY is configured, show_places also returns a map "
+    "image with numbered markers and a coordinate grid so you can see "
+    "where places are, and a find_places tool resolves human-readable "
+    "place names to coordinates — feed its output into the map tools."
 )
 
 
@@ -34,7 +34,7 @@ def create_app() -> FastMCP:
     api_key = os.environ.get("MAPY_API_KEY")
     client = MapyClient(api_key) if api_key else None
     if client is None:
-        _LOG.info("MAPY_API_KEY not set; HTTP-backed tools will not be registered.")
+        _LOG.info("MAPY_API_KEY not set; map images and find_places are unavailable.")
 
     mcp = FastMCP(
         "mapy-com-mcp",

@@ -95,7 +95,7 @@ def register(mcp: FastMCP, *, client: MapyClient | None = None, **_: object) -> 
         you can read positions and distances straight off it. The link
         opens at the same zoom, with the same numbers.
 
-        Do NOT use this to plan a route between points (use build_route_url).
+        Do NOT use this to plan a route between points (use show_route).
         """
         coords = [(p.lon, p.lat) for p in points]
         viewport = fit_viewport(coords)

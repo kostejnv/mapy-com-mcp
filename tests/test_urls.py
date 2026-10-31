@@ -187,20 +187,29 @@ def test_build_points_url_50_points_composes_successfully() -> None:
 
 
 # ---------------------------------------------------------------------------
-# build_route_url — docs example (exact match)
+# build_route_url
 # ---------------------------------------------------------------------------
 
+_ROUTE_TYPES = [
+    "car_fast",
+    "car_short",
+    "foot_fast",
+    "foot_hiking",
+    "bike_road",
+    "bike_mountain",
+]
 
-def test_build_route_url_docs_example_exact_match() -> None:
+
+def _route_points(count: int) -> list[Point]:
+    return [_point(lon=14.0 + i * 0.1, lat=50.0, label=f"P{i}") for i in range(count)]
+
+
+def test_build_route_url_two_points_exact_url_without_waypoints() -> None:
     url = build_route_url(
-        start_lon=14.4378,
-        start_lat=50.0755,
-        end_lon=16.6068,
-        end_lat=49.1951,
-        route_type="car_fast",
-        language="en",
+        [_point(14.4378, 50.0755, "Prague"), _point(16.6068, 49.1951, "Brno")],
+        "car_fast",
     )
-    expected = (
+    assert url == (
         "https://mapy.com/fnc/v1/route"
         "?start=14.4378,50.0755"
         "&end=16.6068,49.1951"
@@ -208,93 +217,54 @@ def test_build_route_url_docs_example_exact_match() -> None:
         "&mapset=traffic"
         "&lang=en"
     )
-    assert url == expected
 
 
-# ---------------------------------------------------------------------------
-# build_route_url — route_type parametrize (all six)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "route_type",
-    ["car_fast", "car_short", "foot_fast", "foot_hiking", "bike_road", "bike_mountain"],
-)
-def test_build_route_url_route_type_in_url(route_type: str) -> None:
-    url = build_route_url(14.0, 50.0, 16.0, 49.0, route_type=route_type)  # type: ignore[arg-type]  # parametrize feeds plain str; Literal narrowing is what we're testing
-    assert f"routeType={route_type}" in url
-
-
-# ---------------------------------------------------------------------------
-# build_route_url — mapset auto-derivation
-# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("route_type", _ROUTE_TYPES)
+def test_build_route_url_route_type_in_url(route_type: Any) -> None:
+    assert f"routeType={route_type}" in build_route_url(_route_points(2), route_type)
 
 
 @pytest.mark.parametrize("route_type", ["car_fast", "car_short"])
-def test_build_route_url_car_route_uses_traffic_mapset(route_type: str) -> None:
-    url = build_route_url(14.0, 50.0, 16.0, 49.0, route_type=route_type)  # type: ignore[arg-type]  # parametrize feeds plain str; Literal narrowing is what we're testing
-    assert "mapset=traffic" in url
+def test_build_route_url_car_route_uses_traffic_mapset(route_type: Any) -> None:
+    assert "mapset=traffic" in build_route_url(_route_points(2), route_type)
 
 
 @pytest.mark.parametrize(
     "route_type", ["foot_fast", "foot_hiking", "bike_road", "bike_mountain"]
 )
-def test_build_route_url_non_car_route_uses_outdoor_mapset(route_type: str) -> None:
-    url = build_route_url(14.0, 50.0, 16.0, 49.0, route_type=route_type)  # type: ignore[arg-type]  # parametrize feeds plain str; Literal narrowing is what we're testing
-    assert "mapset=outdoor" in url
-
-
-# ---------------------------------------------------------------------------
-# build_route_url — language (all five)
-# ---------------------------------------------------------------------------
+def test_build_route_url_non_car_route_uses_outdoor_mapset(route_type: Any) -> None:
+    assert "mapset=outdoor" in build_route_url(_route_points(2), route_type)
 
 
 @pytest.mark.parametrize("language", ["en", "cs", "sk", "de", "pl"])
-def test_build_route_url_language_appears_in_query(language: str) -> None:
-    url = build_route_url(14.0, 50.0, 16.0, 49.0, language=language)  # type: ignore[arg-type]  # parametrize feeds plain str; Literal narrowing is what we're testing
+def test_build_route_url_language_appears_in_query(language: Any) -> None:
+    url = build_route_url(_route_points(2), "foot_fast", language)
     assert f"lang={language}" in url
 
 
-# ---------------------------------------------------------------------------
-# build_route_url — waypoints
-# ---------------------------------------------------------------------------
+def test_build_route_url_middle_points_become_waypoints_in_order() -> None:
+    points = [
+        _point(14.0, 50.0),
+        _point(14.1, 50.1),
+        _point(14.2, 50.2),
+        _point(14.3, 50.3),
+    ]
+    url = build_route_url(points, "foot_fast")
+    assert "start=14.0,50.0&end=14.3,50.3" in url
+    assert "waypoints=14.1,50.1;14.2,50.2" in url
 
 
-def test_build_route_url_no_waypoints_omits_waypoints_param() -> None:
-    url = build_route_url(14.0, 50.0, 16.0, 49.0)
-    assert "waypoints" not in url
+def test_build_route_url_17_points_succeeds() -> None:
+    url = build_route_url(_route_points(17), "foot_fast")
+    assert len(url.split("waypoints=")[1].split("&")[0].split(";")) == 15
 
 
-def test_build_route_url_one_waypoint_correct_format() -> None:
-    url = build_route_url(14.0, 50.0, 16.0, 49.0, waypoints=[(14.45, 50.08)])
-    assert "waypoints=14.45,50.08" in url
+@pytest.mark.parametrize("count", [0, 1])
+def test_build_route_url_too_few_points_raises_tool_error(count: int) -> None:
+    with pytest.raises(ToolError, match="start"):
+        build_route_url(_route_points(count), "foot_fast")
 
 
-def test_build_route_url_multiple_waypoints_joined_with_semicolon() -> None:
-    url = build_route_url(
-        14.0, 50.0, 16.0, 49.0, waypoints=[(14.45, 50.08), (15.0, 49.5)]
-    )
-    assert "waypoints=14.45,50.08;15.0,49.5" in url
-
-
-def test_build_route_url_waypoints_in_input_order() -> None:
-    """Waypoints appear in the URL in the order they were passed."""
-    wp = [(14.0 + i * 0.1, 50.0) for i in range(3)]
-    url = build_route_url(14.0, 50.0, 16.0, 49.0, waypoints=wp)
-    waypoints_str = url.split("waypoints=")[1]
-    parts = waypoints_str.split(";")
-    assert parts[0].startswith("14.0,")
-    assert parts[1].startswith("14.1,")
-    assert parts[2].startswith("14.2,")
-
-
-def test_build_route_url_15_waypoints_succeeds() -> None:
-    wp = [(14.0 + i * 0.05, 50.0) for i in range(15)]
-    url = build_route_url(14.0, 50.0, 16.0, 49.0, waypoints=wp)
-    assert url.startswith("https://mapy.com/fnc/v1/route")
-
-
-def test_build_route_url_16_waypoints_raises_tool_error() -> None:
-    wp = [(14.0 + i * 0.05, 50.0) for i in range(16)]
+def test_build_route_url_18_points_raises_tool_error() -> None:
     with pytest.raises(ToolError, match="15"):
-        build_route_url(14.0, 50.0, 16.0, 49.0, waypoints=wp)
+        build_route_url(_route_points(18), "foot_fast")

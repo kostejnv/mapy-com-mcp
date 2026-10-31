@@ -12,6 +12,7 @@ from typing import Any, Literal
 import httpx
 
 from .geocoding import GeocodeMatch
+from .routing import Route, RouteLeg, RoutePointInfo, RouteType
 
 _DEFAULT_BASE_URL = "https://api.mapy.com"
 _DEFAULT_TIMEOUT_SECONDS = 10.0
@@ -81,14 +82,7 @@ class MapyClient:
             params["preferNear"] = f"{lon},{lat}"
 
         resp = await self._client.get("/v1/geocode", params=params)
-
-        if resp.status_code in (401, 403):
-            raise MapyAPIError(resp.status_code, "API key invalid or unauthorized")
-        if resp.status_code >= 500:
-            raise MapyAPIError(resp.status_code, "mapy.com geocoding service error")
-        if resp.status_code >= 400:
-            raise MapyAPIError(resp.status_code, resp.text[:200])
-
+        _raise_for_error(resp, "geocoding")
         return [_parse_match(item) for item in resp.json().get("items", [])]
 
     async def static_map(
@@ -120,18 +114,77 @@ class MapyClient:
         }
 
         resp = await self._client.get("/v1/static/map", params=params)
-
-        if resp.status_code in (401, 403):
-            raise MapyAPIError(resp.status_code, "API key invalid or unauthorized")
-        if resp.status_code >= 500:
-            raise MapyAPIError(resp.status_code, "mapy.com static map service error")
-        if resp.status_code >= 400:
-            raise MapyAPIError(resp.status_code, resp.text[:200])
-
+        _raise_for_error(resp, "static map")
         return resp.content
+
+    async def route(
+        self,
+        points: list[tuple[float, float]],
+        *,
+        route_type: RouteType,
+        lang: str,
+    ) -> Route:
+        """Plan a route through (lon, lat) points: first = start, last = end.
+
+        Raises MapyAPIError on 4xx/5xx responses. httpx exceptions (timeout,
+        connection error) propagate to the caller.
+        """
+        (start_lon, start_lat), *waypoints, (end_lon, end_lat) = points
+        params: dict[str, Any] = {
+            "apikey": self._api_key,
+            "start": f"{start_lon},{start_lat}",
+            "end": f"{end_lon},{end_lat}",
+            "routeType": route_type,
+            "lang": lang,
+            "format": "geojson",
+        }
+        if waypoints:
+            params["waypoints"] = ";".join(f"{lon},{lat}" for lon, lat in waypoints)
+
+        resp = await self._client.get("/v1/routing/route", params=params)
+        _raise_for_error(resp, "routing")
+        return _parse_route(resp.json())
+
+    async def elevation(self, positions: list[tuple[float, float]]) -> list[float]:
+        """Elevations in meters for up to 256 (lon, lat) positions, same order.
+
+        Raises MapyAPIError on 4xx/5xx responses. httpx exceptions (timeout,
+        connection error) propagate to the caller.
+        """
+        params: dict[str, Any] = {
+            "apikey": self._api_key,
+            "positions": ";".join(f"{lon:.6f},{lat:.6f}" for lon, lat in positions),
+        }
+        resp = await self._client.get("/v1/elevation", params=params)
+        _raise_for_error(resp, "elevation")
+        return [item["elevation"] for item in resp.json()["items"]]
 
     async def aclose(self) -> None:
         await self._client.aclose()
+
+
+def _raise_for_error(resp: httpx.Response, service: str) -> None:
+    if resp.status_code in (401, 403):
+        raise MapyAPIError(resp.status_code, "API key invalid or unauthorized")
+    if resp.status_code >= 500:
+        raise MapyAPIError(resp.status_code, f"mapy.com {service} service error")
+    if resp.status_code >= 400:
+        raise MapyAPIError(resp.status_code, resp.text[:200])
+
+
+def _parse_route(data: dict[str, Any]) -> Route:
+    return Route(
+        length_m=data["length"],
+        duration_s=data["duration"],
+        legs=[RouteLeg(part["length"], part["duration"]) for part in data["parts"]],
+        geometry=[
+            (lon, lat) for lon, lat in data["geometry"]["geometry"]["coordinates"]
+        ],
+        points=[
+            RoutePointInfo(point["snapDistance"], point.get("restrictionType"))
+            for point in data["routePoints"]
+        ],
+    )
 
 
 def _parse_match(item: dict[str, Any]) -> GeocodeMatch:

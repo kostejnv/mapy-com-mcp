@@ -8,19 +8,12 @@ from urllib.parse import quote
 from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, Field
 
+from ..mapy_api.routing import RouteType
 from ..static_map.viewport import Viewport
 from .uc_encoder import encode_uc
 
 Language = Literal["en", "cs", "sk", "de", "pl"]
 PointsMapset = Literal["outdoor", "traffic", "winter", "aerial", "basic"]
-RouteType = Literal[
-    "car_fast",
-    "car_short",
-    "foot_fast",
-    "foot_hiking",
-    "bike_road",
-    "bike_mountain",
-]
 
 _LEGACY_PATH: dict[PointsMapset, str] = {
     "outdoor": "turisticka",
@@ -30,6 +23,7 @@ _LEGACY_PATH: dict[PointsMapset, str] = {
     "basic": "zakladni",
 }
 _MAX_WAYPOINTS = 15
+MAX_ROUTE_POINTS = _MAX_WAYPOINTS + 2  # start + waypoints + end
 
 
 class Point(BaseModel):
@@ -127,34 +121,33 @@ def _build_multi_point_url(
 
 
 def build_route_url(
-    start_lon: float,
-    start_lat: float,
-    end_lon: float,
-    end_lat: float,
-    route_type: RouteType = "car_fast",
-    waypoints: list[tuple[float, float]] | None = None,
+    points: list[Point],
+    route_type: RouteType,
     language: Language = "en",
 ) -> str:
-    """Compose a mapy.com URL that opens a planned route between two points.
+    """Compose a mapy.com URL that opens a planned route through `points`.
 
-    Map style is auto-derived from `route_type` (car_* uses traffic,
+    First point is the start, last the end, the rest are waypoints in visit
+    order. Map style is auto-derived from `route_type` (car_* uses traffic,
     foot_*/bike_* uses outdoor). Map auto-fits to the route, so there is
-    no zoom argument. Raises ToolError if more than 15 waypoints.
+    no zoom argument. Raises ToolError for fewer than 2 points or more than
+    15 waypoints.
     """
-    if waypoints is not None and len(waypoints) > _MAX_WAYPOINTS:
+    if not 2 <= len(points) <= MAX_ROUTE_POINTS:
         raise ToolError(
-            f"mapy.com supports at most {_MAX_WAYPOINTS} waypoints, "
-            f"got {len(waypoints)}."
+            f"A route needs a start, an end and at most {_MAX_WAYPOINTS} "
+            f"waypoints, got {len(points)} points."
         )
+    start, *waypoints, end = points
     mapset = "traffic" if route_type.startswith("car_") else "outdoor"
     parts = [
-        f"start={start_lon},{start_lat}",
-        f"end={end_lon},{end_lat}",
+        f"start={start.lon},{start.lat}",
+        f"end={end.lon},{end.lat}",
         f"routeType={route_type}",
         f"mapset={mapset}",
         f"lang={language}",
     ]
     if waypoints:
-        joined = ";".join(f"{lon},{lat}" for lon, lat in waypoints)
+        joined = ";".join(f"{p.lon},{p.lat}" for p in waypoints)
         parts.append(f"waypoints={quote(joined, safe=',;')}")
     return "https://mapy.com/fnc/v1/route?" + "&".join(parts)

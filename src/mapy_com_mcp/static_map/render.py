@@ -33,6 +33,12 @@ _MARKER_COLOR = (215, 25, 32, 255)
 _MARKER_RADIUS_PX = 14
 _MARKER_SUPERSAMPLE = 4  # smooth edges
 
+_ROUTE_COLOR = _MARKER_COLOR
+_ROUTE_WIDTH = 5
+_ROUTE_HALO = (255, 255, 255, 230)
+_ROUTE_HALO_WIDTH = 9
+_ROUTE_SUPERSAMPLE = 2
+
 
 def format_distance(meters: float) -> str:
     return f"{meters / 1000:g} km" if meters >= 1000 else f"{round(meters)} m"
@@ -51,11 +57,19 @@ def grid_step_m(viewport: Viewport) -> float:
 
 
 def render(
-    base_image: bytes, viewport: Viewport, points: list[tuple[float, float]]
+    base_image: bytes,
+    viewport: Viewport,
+    points: list[tuple[float, float]],
+    route: list[tuple[float, float]] | None = None,
 ) -> bytes:
-    """Overlay grid, legend and numbered markers; return JPEG bytes."""
+    """Overlay grid, legend, an optional route line and numbered markers.
+
+    Returns JPEG bytes. The route sits between the grid and the markers.
+    """
     img = Image.open(io.BytesIO(base_image)).convert("RGBA")
     img = _draw_grid(img, viewport)
+    if route:
+        img = _draw_route(img, viewport, route)
     for number, (lon, lat) in enumerate(points, start=1):
         _draw_marker(img, viewport.to_pixel(lon, lat), str(number))
     buf = io.BytesIO()
@@ -116,6 +130,19 @@ def _draw_grid(img: Image.Image, viewport: Viewport) -> Image.Image:
     for layer in (halo, lines, labels):
         img = Image.alpha_composite(img, layer)
     return img
+
+
+def _draw_route(
+    img: Image.Image, viewport: Viewport, route: list[tuple[float, float]]
+) -> Image.Image:
+    ss = _ROUTE_SUPERSAMPLE
+    layer = Image.new("RGBA", (img.width * ss, img.height * ss), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+    pixels = [viewport.to_pixel(lon, lat) for lon, lat in route]
+    line = [(x * ss, y * ss) for x, y in pixels]
+    draw.line(line, fill=_ROUTE_HALO, width=_ROUTE_HALO_WIDTH * ss, joint="curve")
+    draw.line(line, fill=_ROUTE_COLOR, width=_ROUTE_WIDTH * ss, joint="curve")
+    return Image.alpha_composite(img, layer.reduce(ss))
 
 
 def _draw_label(

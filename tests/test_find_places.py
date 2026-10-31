@@ -81,7 +81,7 @@ async def test_url_tools_present_without_api_key(mcp_no_key: FastMCP) -> None:
         tools = await client.list_tools()
     names = [t.name for t in tools]
     assert "show_places" in names
-    assert "build_route_url" in names
+    assert "show_route" in names
 
 
 async def test_find_places_present_with_api_key(mcp_with_key: FastMCP) -> None:
@@ -98,7 +98,7 @@ async def test_all_three_tools_present_with_api_key(mcp_with_key: FastMCP) -> No
         tools = await client.list_tools()
     names = [t.name for t in tools]
     assert "show_places" in names
-    assert "build_route_url" in names
+    assert "show_route" in names
     assert "find_places" in names
 
 

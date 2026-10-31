@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+from typing import Any
 
 import pytest
 from PIL import Image
@@ -91,3 +92,37 @@ def test_render_leaves_footer_free_of_grid_lines() -> None:
     img = Image.open(io.BytesIO(out)).convert("L")
     footer = img.crop((0, 640 - 26, 1024, 640))
     assert min(footer.tobytes()) > 240
+
+
+def _is_red(pixel: Any) -> bool:
+    r, g, b = pixel[:3]
+    return bool(r > 150 and g < 100 and b < 100)
+
+
+def test_render_draws_route_line_between_points() -> None:
+    line = [(14.39, 50.08), (14.41, 50.08)]
+    vp = fit_viewport(line)
+    out = render(_base_png(vp.width, vp.height, "#ffffff"), vp, [], route=line)
+    img = Image.open(io.BytesIO(out)).convert("RGB")
+    x, y = vp.to_pixel(14.40, 50.08)
+    assert any(_is_red(img.getpixel((round(x), round(y) + dy))) for dy in range(-2, 3))
+
+
+def test_render_without_route_draws_no_line() -> None:
+    line = [(14.39, 50.08), (14.41, 50.08)]
+    vp = fit_viewport(line)
+    out = render(_base_png(vp.width, vp.height, "#ffffff"), vp, [])
+    img = Image.open(io.BytesIO(out)).convert("RGB")
+    x, y = vp.to_pixel(14.40, 50.08)
+    assert not any(
+        _is_red(img.getpixel((round(x), round(y) + dy))) for dy in range(-2, 3)
+    )
+
+
+def test_render_with_route_returns_valid_jpeg_of_base_size() -> None:
+    line = [(14.4 + 0.01 * i, 50.0 + 0.004 * (i % 3)) for i in range(40)]
+    vp = fit_viewport(line)
+    out = render(_base_png(vp.width, vp.height), vp, [line[0], line[-1]], line)
+    img = Image.open(io.BytesIO(out))
+    assert img.format == "JPEG"
+    assert img.size == (vp.width, vp.height)

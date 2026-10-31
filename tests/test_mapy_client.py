@@ -322,3 +322,147 @@ async def test_static_map_other_4xx_includes_truncated_body(client: MapyClient) 
     assert exc_info.value.status == 422
     assert "bad zoom" in str(exc_info.value)
     assert len(str(exc_info.value)) < 300
+
+
+# ---------------------------------------------------------------------------
+# route
+# ---------------------------------------------------------------------------
+
+_ROUTE_URL = "https://api.mapy.com/v1/routing/route"
+_ELEVATION_URL = "https://api.mapy.com/v1/elevation"
+
+_ROUTE_BODY = {
+    "length": 3800,
+    "duration": 2940,
+    "parts": [
+        {"length": 1200, "duration": 900},
+        {"length": 2600, "duration": 2040},
+    ],
+    "geometry": {
+        "type": "Feature",
+        "geometry": {
+            "type": "LineString",
+            "coordinates": [[14.4, 50.0], [14.41, 50.01], [14.42, 50.02]],
+        },
+    },
+    "routePoints": [
+        {"snapDistance": 3},
+        {"snapDistance": 80, "restrictionType": "CLOSURE"},
+        {"snapDistance": 0},
+    ],
+}
+
+
+@respx.mock
+async def test_route_two_points_params_and_parsing(client: MapyClient) -> None:
+    mock = respx.get(_ROUTE_URL).respond(200, json=_ROUTE_BODY)
+    route = await client.route(
+        [(14.4, 50.0), (14.42, 50.02)], route_type="foot_fast", lang="cs"
+    )
+    params = mock.calls.last.request.url.params
+    assert params["apikey"] == _API_KEY
+    assert params["start"] == "14.4,50.0"
+    assert params["end"] == "14.42,50.02"
+    assert params["routeType"] == "foot_fast"
+    assert params["lang"] == "cs"
+    assert params["format"] == "geojson"
+    assert "waypoints" not in params
+    assert "apikey" not in mock.calls.last.request.headers
+    assert route.length_m == 3800
+    assert route.duration_s == 2940
+    assert [(leg.length_m, leg.duration_s) for leg in route.legs] == [
+        (1200, 900),
+        (2600, 2040),
+    ]
+    assert route.geometry == [(14.4, 50.0), (14.41, 50.01), (14.42, 50.02)]
+    assert [(p.snap_distance_m, p.restriction) for p in route.points] == [
+        (3, None),
+        (80, "CLOSURE"),
+        (0, None),
+    ]
+
+
+@respx.mock
+async def test_route_waypoints_only_for_more_than_two_points(
+    client: MapyClient,
+) -> None:
+    mock = respx.get(_ROUTE_URL).respond(200, json=_ROUTE_BODY)
+    await client.route(
+        [(14.0, 50.0), (14.1, 50.1), (14.2, 50.2), (14.3, 50.3)],
+        route_type="car_fast",
+        lang="en",
+    )
+    params = mock.calls.last.request.url.params
+    assert params["start"] == "14.0,50.0"
+    assert params["end"] == "14.3,50.3"
+    assert params["waypoints"] == "14.1,50.1;14.2,50.2"
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    "status,message",
+    [
+        (401, "API key invalid or unauthorized"),
+        (403, "API key invalid or unauthorized"),
+        (500, "mapy.com routing service error"),
+        (503, "mapy.com routing service error"),
+    ],
+)
+async def test_route_error_mapping(
+    client: MapyClient, status: int, message: str
+) -> None:
+    respx.get(_ROUTE_URL).respond(status)
+    with pytest.raises(MapyAPIError, match=message) as exc:
+        await client.route(
+            [(14.0, 50.0), (14.1, 50.1)], route_type="car_fast", lang="en"
+        )
+    assert exc.value.status == status
+
+
+@respx.mock
+async def test_route_4xx_includes_body(client: MapyClient) -> None:
+    respx.get(_ROUTE_URL).respond(422, text="bad waypoint")
+    with pytest.raises(MapyAPIError, match="bad waypoint"):
+        await client.route(
+            [(14.0, 50.0), (14.1, 50.1)], route_type="car_fast", lang="en"
+        )
+
+
+# ---------------------------------------------------------------------------
+# elevation
+# ---------------------------------------------------------------------------
+
+
+@respx.mock
+async def test_elevation_params_and_parsing(client: MapyClient) -> None:
+    mock = respx.get(_ELEVATION_URL).respond(
+        200,
+        json={
+            "items": [
+                {"elevation": 200.5, "position": {"lon": 14.4, "lat": 50.0}},
+                {"elevation": -100000, "position": {"lon": 14.5, "lat": 50.1}},
+            ]
+        },
+    )
+    result = await client.elevation([(14.4, 50.0), (14.5123456789, 50.1)])
+    params = mock.calls.last.request.url.params
+    assert params["apikey"] == _API_KEY
+    assert params["positions"] == "14.400000,50.000000;14.512346,50.100000"
+    assert result == [200.5, -100000]
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    "status,message",
+    [
+        (401, "API key invalid or unauthorized"),
+        (500, "mapy.com elevation service error"),
+        (400, "too many positions"),
+    ],
+)
+async def test_elevation_error_mapping(
+    client: MapyClient, status: int, message: str
+) -> None:
+    respx.get(_ELEVATION_URL).respond(status, text="too many positions")
+    with pytest.raises(MapyAPIError, match=message):
+        await client.elevation([(14.0, 50.0)])

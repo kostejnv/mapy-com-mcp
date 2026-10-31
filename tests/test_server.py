@@ -29,7 +29,8 @@ async def test_create_app_discovers_all_tool_modules() -> None:
     mcp = create_app()
     async with Client(mcp) as client:
         registered_count = len(await client.list_tools())
-    # Without MAPY_API_KEY the two URL-builder tools must always be present.
+    # Without MAPY_API_KEY the URL-builder tools (show_places, show_route)
+    # must always be present.
     assert registered_count >= 2
 
 

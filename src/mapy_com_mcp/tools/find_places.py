@@ -50,7 +50,7 @@ def register(mcp: FastMCP, *, client: MapyClient | None = None, **_: object) -> 
 
         Use this when you have a human-readable place reference (e.g.
         'Charles Bridge, Prague', a street address, a city name) but need
-        WGS84 lat/lon to feed into show_places or build_route_url.
+        WGS84 lat/lon to feed into show_places or show_route.
 
         Returns up to 5 candidate matches per query, in mapy.com's
         relevance order. When several matches exist for one query, use the

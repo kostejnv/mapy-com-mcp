@@ -22,7 +22,9 @@ src/mapy_com_mcp/
   mapy_api/          # the only place that talks to mapy.com over HTTP
     client.py        #   HTTP client (auth, timeouts, error mapping)
     geocoding.py     #   geocoding request/response models
+    routing.py       #   routing response models
   links/             # pure mapy.com URL builders (no HTTP, no key)
+  static_map/        # map viewport, grid/markers/route drawing, elevation profile (no HTTP)
 tests/               # pytest, mocked HTTP via respx
 ```
 

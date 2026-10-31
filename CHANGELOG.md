@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.4.0](https://github.com/kostejnv/mapy-com-mcp/compare/mapy-com-mcp-v0.3.0...mapy-com-mcp-v0.4.0) (2026-10-31)
+
+
+### ⚠ BREAKING CHANGES
+
+* **tools:** replace build_route_url with show_route ([#31](https://github.com/kostejnv/mapy-com-mcp/issues/31))
+
+### Features
+
+* **tools:** replace build_route_url with show_route ([#31](https://github.com/kostejnv/mapy-com-mcp/issues/31)) ([dff2b2b](https://github.com/kostejnv/mapy-com-mcp/commit/dff2b2b37459396cb372577d6c13a6242c018d18))
+
 ## [0.3.0](https://github.com/kostejnv/mapy-com-mcp/compare/mapy-com-mcp-v0.2.0...mapy-com-mcp-v0.3.0) (2026-10-30)
 
 

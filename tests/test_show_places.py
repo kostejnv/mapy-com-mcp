@@ -39,12 +39,6 @@ def _static_png_response(request: httpx.Request) -> Response:
 
 
 @pytest.fixture
-def mcp_no_key(monkeypatch: pytest.MonkeyPatch) -> FastMCP:
-    monkeypatch.delenv("MAPY_API_KEY", raising=False)
-    return create_app()
-
-
-@pytest.fixture
 def mcp_with_key(monkeypatch: pytest.MonkeyPatch) -> FastMCP:
     monkeypatch.setenv("MAPY_API_KEY", "fake-test-key")
     return create_app()
@@ -65,50 +59,37 @@ def _text(result: Any) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Without an API key: URL only
+# Link building and input validation (output="url", no API call)
 # ---------------------------------------------------------------------------
 
 
-async def test_without_key_schema_hides_output(mcp_no_key: FastMCP) -> None:
-    tool = await _tool(mcp_no_key)
-    props = set(tool.inputSchema["properties"])
-    assert props == {"points", "mapset", "language"}
-
-
-async def test_without_key_returns_url_only(mcp_no_key: FastMCP) -> None:
-    result = await _call(mcp_no_key, points=_POINTS)
+@respx.mock
+async def test_url_output_multi_point_uses_vlastni_body(mcp_with_key: FastMCP) -> None:
+    result = await _call(mcp_with_key, points=_POINTS, output="url")
     assert len(result.content) == 1
-    assert isinstance(result.content[0], TextContent)
     assert _text(result).startswith("https://mapy.com/en/turisticka?vlastni-body")
 
 
-async def test_without_key_annotations_are_closed_world(mcp_no_key: FastMCP) -> None:
-    ann = (await _tool(mcp_no_key)).annotations
-    assert ann.readOnlyHint is True
-    assert ann.destructiveHint is False
-    assert ann.idempotentHint is True
-    assert ann.openWorldHint is False
-    assert ann.title and ann.title.strip()
-
-
-async def test_without_key_single_point_uses_showmap(mcp_no_key: FastMCP) -> None:
-    result = await _call(mcp_no_key, points=_ONE_POINT)
-    url = _text(result)
+@respx.mock
+async def test_url_output_single_point_uses_showmap(mcp_with_key: FastMCP) -> None:
+    url = _text(await _call(mcp_with_key, points=_ONE_POINT, output="url"))
     assert url.startswith("https://mapy.com/fnc/v1/showmap?")
     assert "center=14.4003,50.0907" in url
     assert "zoom=16" in url
 
 
-async def test_without_key_empty_points_raises_tool_error(
-    mcp_no_key: FastMCP,
-) -> None:
+async def test_empty_points_raises_tool_error(mcp_with_key: FastMCP) -> None:
     with pytest.raises(ToolError):
-        await _call(mcp_no_key, points=[])
+        await _call(mcp_with_key, points=[], output="url")
 
 
-async def test_empty_label_raises_tool_error(mcp_no_key: FastMCP) -> None:
+async def test_empty_label_raises_tool_error(mcp_with_key: FastMCP) -> None:
     with pytest.raises(ToolError):
-        await _call(mcp_no_key, points=[{"lon": 14.0, "lat": 50.0, "label": ""}])
+        await _call(
+            mcp_with_key,
+            points=[{"lon": 14.0, "lat": 50.0, "label": ""}],
+            output="url",
+        )
 
 
 async def test_schema_has_no_zoom_field(mcp_with_key: FastMCP) -> None:
@@ -257,7 +238,7 @@ async def test_50_points_render(mcp_with_key: FastMCP) -> None:
 
 
 @respx.mock
-@pytest.mark.parametrize("status", [401, 500, 422])
+@pytest.mark.parametrize("status", [500, 422])
 async def test_both_falls_back_to_text_with_link_on_api_error(
     mcp_with_key: FastMCP, status: int
 ) -> None:
@@ -292,7 +273,29 @@ async def test_map_raises_tool_error_on_network_error(mcp_with_key: FastMCP) -> 
         await _call(mcp_with_key, points=_POINTS, output="map")
 
 
-async def test_pole_point_does_not_raise(mcp_no_key: FastMCP) -> None:
+async def test_pole_point_does_not_raise(mcp_with_key: FastMCP) -> None:
     points = [{"lon": 0.0, "lat": 90.0, "label": "North Pole"}]
-    result = await _call(mcp_no_key, points=points)
+    result = await _call(mcp_with_key, points=points, output="url")
     assert _text(result).startswith("https://mapy.com/")
+
+
+@respx.mock
+@pytest.mark.parametrize("status", [401, 403])
+@pytest.mark.parametrize("output", ["both", "map"])
+async def test_rejected_key_raises_rejected_message(
+    mcp_with_key: FastMCP, status: int, output: str
+) -> None:
+    respx.get(_STATIC_URL).mock(return_value=Response(status))
+    with pytest.raises(ToolError, match=r"Mapy\.com rejected the API key"):
+        await _call(mcp_with_key, points=_POINTS, output=output)
+
+
+@respx.mock
+async def test_url_output_with_rejected_key_still_succeeds(
+    mcp_with_key: FastMCP,
+) -> None:
+    route = respx.get(_STATIC_URL).mock(return_value=Response(401))
+    result = await _call(mcp_with_key, points=_POINTS, output="url")
+    assert not result.is_error
+    assert _text(result).startswith("https://mapy.com/")
+    assert not route.called

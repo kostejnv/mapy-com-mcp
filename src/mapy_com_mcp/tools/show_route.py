@@ -9,7 +9,6 @@ import httpx
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.tools import Tool
-from fastmcp.tools.tool_transform import ArgTransform
 from fastmcp.utilities.types import Image
 from mcp.types import ToolAnnotations
 from pydantic import Field
@@ -49,12 +48,7 @@ class _NoElevationDataError(Exception):
     """The route has no usable elevation profile (too short, or no data)."""
 
 
-# Without an API key nothing can be planned or drawn, so `output` is hidden
-# and fixed to "url" — the model never sees a choice that cannot work.
-_URL_ONLY = {"output": ArgTransform(hide=True, default="url")}
-
-
-def register(mcp: FastMCP, *, client: MapyClient | None = None, **_: object) -> None:
+def register(mcp: FastMCP, *, client: MapyClient, **_: object) -> None:
     async def show_route(
         points: Annotated[
             list[Point],
@@ -107,8 +101,7 @@ def register(mcp: FastMCP, *, client: MapyClient | None = None, **_: object) -> 
         ride or drive takes, or wants a trip with stops. The map area is
         chosen automatically; you never pick a zoom or map style.
 
-        When route planning is available (the `output` parameter is
-        offered), it also returns the total and per-leg distance and time,
+        It returns the total and per-leg distance and time,
         warnings about points moved onto the network or lying in restricted
         areas, and — in 'map'/'both' — a map image with the route and
         numbered points over a coordinate grid. On foot and by bike it adds
@@ -117,9 +110,6 @@ def register(mcp: FastMCP, *, client: MapyClient | None = None, **_: object) -> 
         Do NOT use this to merely show places on a map (use show_places).
         """
         url = build_route_url(points, route_type, language)
-        if client is None:
-            return url
-
         coords = [(p.lon, p.lat) for p in points]
         try:
             route = await client.route(coords, route_type=route_type, lang=language)
@@ -173,13 +163,12 @@ def register(mcp: FastMCP, *, client: MapyClient | None = None, **_: object) -> 
     mcp.add_tool(
         Tool.from_tool(
             show_route,
-            transform_args=_URL_ONLY if client is None else None,
             annotations=ToolAnnotations(
                 title="Plan a route on a map",
                 readOnlyHint=True,
                 destructiveHint=False,
                 idempotentHint=True,
-                openWorldHint=client is not None,
+                openWorldHint=True,
             ),
         )
     )

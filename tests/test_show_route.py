@@ -68,12 +68,6 @@ def _elevation_response(request: httpx.Request) -> Response:
 
 
 @pytest.fixture
-def mcp_no_key(monkeypatch: pytest.MonkeyPatch) -> FastMCP:
-    monkeypatch.delenv("MAPY_API_KEY", raising=False)
-    return create_app()
-
-
-@pytest.fixture
 def mcp_with_key(monkeypatch: pytest.MonkeyPatch) -> FastMCP:
     monkeypatch.setenv("MAPY_API_KEY", "fake-test-key")
     return create_app()
@@ -93,38 +87,19 @@ def _images(result: Any) -> list[ImageContent]:
 
 
 # ---------------------------------------------------------------------------
-# Without an API key
+# Input validation and registration
 # ---------------------------------------------------------------------------
 
 
-async def test_without_key_schema_hides_output_and_requires_route_type(
-    mcp_no_key: FastMCP,
-) -> None:
-    async with Client(mcp_no_key) as client:
-        tool = next(t for t in await client.list_tools() if t.name == "show_route")
-    assert set(tool.inputSchema["properties"]) == {"points", "route_type", "language"}
-    assert set(tool.inputSchema["required"]) == {"points", "route_type"}
-    assert tool.annotations is not None
-    assert tool.annotations.openWorldHint is False
-
-
-async def test_without_key_returns_url_only(mcp_no_key: FastMCP) -> None:
-    result = await _call(mcp_no_key, points=_POINTS, route_type="foot_fast")
-    assert len(result.content) == 1
-    url = _text(result)
-    assert url.startswith(
-        "https://mapy.com/fnc/v1/route?start=14.4,50.09&end=14.42,50.08"
-    )
-    assert "routeType=foot_fast" in url
-
-
-async def test_without_key_too_few_points_is_rejected(mcp_no_key: FastMCP) -> None:
+async def test_too_few_points_is_rejected(mcp_with_key: FastMCP) -> None:
     with pytest.raises(ToolError):
-        await _call(mcp_no_key, points=_POINTS[:1], route_type="foot_fast")
+        await _call(
+            mcp_with_key, points=_POINTS[:1], route_type="foot_fast", output="url"
+        )
 
 
-async def test_build_route_url_tool_is_gone(mcp_no_key: FastMCP) -> None:
-    async with Client(mcp_no_key) as client:
+async def test_build_route_url_tool_is_gone(mcp_with_key: FastMCP) -> None:
+    async with Client(mcp_with_key) as client:
         names = {t.name for t in await client.list_tools()}
     assert "build_route_url" not in names
     assert "show_route" in names
@@ -386,7 +361,7 @@ async def test_routing_failure_falls_back_to_link(
 
 @respx.mock
 async def test_routing_failure_in_map_mode_raises(mcp_with_key: FastMCP) -> None:
-    respx.get(_ROUTE_URL).respond(401)
+    respx.get(_ROUTE_URL).respond(500)
     with pytest.raises(ToolError, match="Route planning failed"):
         await _call(mcp_with_key, points=_POINTS, route_type="foot_fast", output="map")
 
@@ -481,3 +456,37 @@ async def test_zero_length_route_skips_profile_without_error(
     result = await _call(mcp_with_key, points=_POINTS, route_type="foot_fast")
     assert not elevation.called
     assert "Elevation profile unavailable (" in _text(result)
+
+
+@respx.mock
+@pytest.mark.parametrize("status", [401, 403])
+@pytest.mark.parametrize("output", ["url", "both", "map"])
+async def test_rejected_key_on_routing_raises_rejected_message(
+    mcp_with_key: FastMCP, status: int, output: str
+) -> None:
+    respx.get(_ROUTE_URL).respond(status)
+    with pytest.raises(ToolError, match=r"Mapy\.com rejected the API key"):
+        await _call(mcp_with_key, points=_POINTS, route_type="foot_fast", output=output)
+
+
+@respx.mock
+@pytest.mark.parametrize("status", [401, 403])
+async def test_rejected_key_on_static_map_raises_rejected_message(
+    mcp_with_key: FastMCP, status: int
+) -> None:
+    respx.get(_ROUTE_URL).respond(200, json=_route_body())
+    respx.get(_STATIC_URL).respond(status)
+    respx.get(_ELEVATION_URL).mock(side_effect=_elevation_response)
+    with pytest.raises(ToolError, match=r"Mapy\.com rejected the API key"):
+        await _call(mcp_with_key, points=_POINTS, route_type="foot_fast")
+
+
+@respx.mock
+async def test_rejected_key_on_elevation_raises_rejected_message(
+    mcp_with_key: FastMCP,
+) -> None:
+    respx.get(_ROUTE_URL).respond(200, json=_route_body())
+    respx.get(_STATIC_URL).mock(side_effect=_static_response)
+    respx.get(_ELEVATION_URL).respond(401)
+    with pytest.raises(ToolError, match=r"Mapy\.com rejected the API key"):
+        await _call(mcp_with_key, points=_POINTS, route_type="foot_fast")

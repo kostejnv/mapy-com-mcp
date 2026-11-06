@@ -36,6 +36,15 @@ class MapyAPIError(Exception):
         self.message = message
 
 
+class APIKeyRejectedError(Exception):
+    """api.mapy.com refused the API key (HTTP 401/403).
+
+    Deliberately not a MapyAPIError: tools degrade on ordinary API errors (e.g.
+    a link without a map), but a bad key breaks every tool and has to reach
+    the user as one clear message.
+    """
+
+
 class MapyClient:
     """Thin async wrapper around the mapy.com REST API.
 
@@ -68,8 +77,9 @@ class MapyClient:
     ) -> list[GeocodeMatch]:
         """Resolve a place query to a list of candidate matches.
 
-        Raises MapyAPIError on 4xx/5xx responses. httpx exceptions (timeout,
-        connection error) propagate to the caller.
+        Raises APIKeyRejectedError on 401/403 and MapyAPIError on other
+        4xx/5xx responses. httpx exceptions (timeout, connection error)
+        propagate to the caller.
         """
         params: dict[str, Any] = {
             "apikey": self._api_key,
@@ -98,8 +108,9 @@ class MapyClient:
     ) -> bytes:
         """Fetch a PNG map image centered on (lon, lat) at the given zoom.
 
-        Raises MapyAPIError on 4xx/5xx responses. httpx exceptions (timeout,
-        connection error) propagate to the caller.
+        Raises APIKeyRejectedError on 401/403 and MapyAPIError on other
+        4xx/5xx responses. httpx exceptions (timeout, connection error)
+        propagate to the caller.
         """
         params: dict[str, Any] = {
             "apikey": self._api_key,
@@ -126,8 +137,9 @@ class MapyClient:
     ) -> Route:
         """Plan a route through (lon, lat) points: first = start, last = end.
 
-        Raises MapyAPIError on 4xx/5xx responses. httpx exceptions (timeout,
-        connection error) propagate to the caller.
+        Raises APIKeyRejectedError on 401/403 and MapyAPIError on other
+        4xx/5xx responses. httpx exceptions (timeout, connection error)
+        propagate to the caller.
         """
         (start_lon, start_lat), *waypoints, (end_lon, end_lat) = points
         params: dict[str, Any] = {
@@ -148,8 +160,9 @@ class MapyClient:
     async def elevation(self, positions: list[tuple[float, float]]) -> list[float]:
         """Elevations in meters for up to 256 (lon, lat) positions, same order.
 
-        Raises MapyAPIError on 4xx/5xx responses. httpx exceptions (timeout,
-        connection error) propagate to the caller.
+        Raises APIKeyRejectedError on 401/403 and MapyAPIError on other
+        4xx/5xx responses. httpx exceptions (timeout, connection error)
+        propagate to the caller.
         """
         params: dict[str, Any] = {
             "apikey": self._api_key,
@@ -165,7 +178,7 @@ class MapyClient:
 
 def _raise_for_error(resp: httpx.Response, service: str) -> None:
     if resp.status_code in (401, 403):
-        raise MapyAPIError(resp.status_code, "API key invalid or unauthorized")
+        raise APIKeyRejectedError(f"mapy.com API error {resp.status_code}")
     if resp.status_code >= 500:
         raise MapyAPIError(resp.status_code, f"mapy.com {service} service error")
     if resp.status_code >= 400:

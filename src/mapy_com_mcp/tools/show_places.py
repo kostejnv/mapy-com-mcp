@@ -13,20 +13,11 @@ from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from ..links.urls import Language, Point, PointsMapset, build_points_url
-from ..mapy_api.client import MapyAPIError, MapyClient, StaticMapset
-from ..static_map.render import format_distance, grid_step_m, render
-from ..static_map.viewport import Viewport, fit_viewport
+from ..mapy_api.client import MapyAPIError, MapyClient
+from ..reports.places import legend, places_map
+from ..static_map.viewport import fit_viewport
 
 Output = Literal["url", "map", "both"]
-
-# The static map API has no traffic layer; basic is the closest look.
-_STATIC_MAPSET: dict[PointsMapset, StaticMapset] = {
-    "outdoor": "outdoor",
-    "traffic": "basic",
-    "winter": "winter",
-    "aerial": "aerial",
-    "basic": "basic",
-}
 
 
 def register(mcp: FastMCP, *, client: MapyClient, **_: object) -> None:
@@ -47,9 +38,8 @@ def register(mcp: FastMCP, *, client: MapyClient, **_: object) -> None:
             Field(
                 description=(
                     "'both' (default): a map image for you to look at plus a "
-                    "mapy.com link for the user. 'map': only the image, e.g. "
-                    "while you reason about where places are. 'url': only the "
-                    "link, when you don't need to see the map."
+                    "mapy.com link for the user. 'map': only the image. "
+                    "'url': only the link, when you don't need to see the map."
                 ),
             ),
         ] = "both",
@@ -90,33 +80,26 @@ def register(mcp: FastMCP, *, client: MapyClient, **_: object) -> None:
         opens at the same zoom, with the same numbers.
 
         Do NOT use this to plan a route between points (use show_route).
+        To look at places yourself without showing the user, use
+        inspect_places.
         """
-        coords = [(p.lon, p.lat) for p in points]
-        viewport = fit_viewport(coords)
+        viewport = fit_viewport([(p.lon, p.lat) for p in points])
         url = build_points_url(points, viewport, mapset, language)
         if output == "url":
             return url
 
-        legend = _legend(points, viewport)
         try:
-            base = await client.static_map(
-                lon=viewport.center_lon,
-                lat=viewport.center_lat,
-                zoom=viewport.zoom,
-                width=viewport.width,
-                height=viewport.height,
-                mapset=_STATIC_MAPSET[mapset],
-                lang=language,
-            )
+            jpeg = await places_map(client, points, viewport, mapset, language)
         except (MapyAPIError, httpx.HTTPError) as exc:
             if output == "map":
                 raise ToolError(f"Map image unavailable: {exc}") from exc
             return f"Map image unavailable ({exc}).\nMap link for the user: {url}"
 
-        image = Image(data=render(base, viewport, coords), format="jpeg")
+        image = Image(data=jpeg, format="jpeg")
+        text = legend(points, viewport)
         if output == "map":
-            return [image, legend]
-        return [image, f"{legend}\nMap link for the user: {url}"]
+            return [image, text]
+        return [image, f"{text}\nMap link for the user: {url}"]
 
     mcp.add_tool(
         Tool.from_tool(
@@ -130,9 +113,3 @@ def register(mcp: FastMCP, *, client: MapyClient, **_: object) -> None:
             ),
         )
     )
-
-
-def _legend(points: list[Point], viewport: Viewport) -> str:
-    lines = [f"{number}. {p.label}" for number, p in enumerate(points, start=1)]
-    lines.append(f"Grid: {format_distance(grid_step_m(viewport))} between lines.")
-    return "\n".join(lines)

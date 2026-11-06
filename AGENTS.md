@@ -24,6 +24,7 @@ src/mapy_com_mcp/
     client.py        #   HTTP client (auth, timeouts, error mapping)
     geocoding.py     #   geocoding request/response models
     routing.py       #   routing response models
+  reports/           # route text, map and profile images shared by user and agent tools
   links/             # pure mapy.com URL builders (no HTTP, no key)
   static_map/        # map viewport, grid/markers/route drawing, elevation profile (no HTTP)
 tests/               # pytest, mocked HTTP via respx

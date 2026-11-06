@@ -10,16 +10,13 @@ from fastmcp.exceptions import ToolError
 from pydantic import Field
 
 from ..links.urls import Language
-from ..mapy_api.client import MapyClient
+from ..mapy_api.client import APIKeyRejectedError, MapyClient
 from ..mapy_api.geocoding import GeocodeQuery, GeocodeQueryResult
 
 _PER_QUERY_LIMIT = 5
 
 
-def register(mcp: FastMCP, *, client: MapyClient | None = None, **_: object) -> None:
-    if client is None:
-        return  # API-key gate — no MAPY_API_KEY, no tool.
-
+def register(mcp: FastMCP, *, client: MapyClient, **_: object) -> None:
     async def find_places(
         queries: Annotated[
             list[GeocodeQuery],
@@ -64,7 +61,7 @@ def register(mcp: FastMCP, *, client: MapyClient | None = None, **_: object) -> 
         Each query in the batch is resolved independently; one failing
         query does not abort the others. Check each result's `error`
         field. If every query fails, the whole call raises an error
-        (likely a bad API key or network problem).
+        (likely a network problem).
         """
         results = await asyncio.gather(
             *(_resolve_one(client, q, language) for q in queries),
@@ -72,6 +69,8 @@ def register(mcp: FastMCP, *, client: MapyClient | None = None, **_: object) -> 
         )
         out: list[GeocodeQueryResult] = []
         for query, result in zip(queries, results, strict=True):
+            if isinstance(result, APIKeyRejectedError):
+                raise result  # not a per-query problem: the whole tool is unusable
             if isinstance(result, BaseException):
                 out.append(
                     GeocodeQueryResult(

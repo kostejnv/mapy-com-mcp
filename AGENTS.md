@@ -18,6 +18,7 @@ For the public pitch and quickstart, read `README.md`.
 src/mapy_com_mcp/
   __init__.py
   server.py          # FastMCP entry, main(), tool auto-registration
+  api_key.py         # MAPY_API_KEY guard: one clear error when missing or rejected
   tools/             # one file per MCP tool — thin MCP wrappers
   mapy_api/          # the only place that talks to mapy.com over HTTP
     client.py        #   HTTP client (auth, timeouts, error mapping)

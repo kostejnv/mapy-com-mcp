@@ -8,7 +8,6 @@ import httpx
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.tools import Tool
-from fastmcp.tools.tool_transform import ArgTransform
 from fastmcp.utilities.types import Image
 from mcp.types import ToolAnnotations
 from pydantic import Field
@@ -29,12 +28,8 @@ _STATIC_MAPSET: dict[PointsMapset, StaticMapset] = {
     "basic": "basic",
 }
 
-# Without an API key there is no map image, so `output` is hidden and fixed
-# to "url" — the model never sees a choice that cannot work.
-_URL_ONLY = {"output": ArgTransform(hide=True, default="url")}
 
-
-def register(mcp: FastMCP, *, client: MapyClient | None = None, **_: object) -> None:
+def register(mcp: FastMCP, *, client: MapyClient, **_: object) -> None:
     async def show_places(
         points: Annotated[
             list[Point],
@@ -89,8 +84,7 @@ def register(mcp: FastMCP, *, client: MapyClient | None = None, **_: object) -> 
         each other?'. The map area and zoom are chosen automatically so all
         points fit; you never pick a zoom.
 
-        When map images are available (the `output` parameter is offered),
-        it can also return a map image for you: points numbered in input
+        It can also return a map image for you: points numbered in input
         order and a coordinate grid (line spacing given in the reply), so
         you can read positions and distances straight off it. The link
         opens at the same zoom, with the same numbers.
@@ -103,7 +97,6 @@ def register(mcp: FastMCP, *, client: MapyClient | None = None, **_: object) -> 
         if output == "url":
             return url
 
-        assert client is not None  # `output` is fixed to "url" without a key
         legend = _legend(points, viewport)
         try:
             base = await client.static_map(
@@ -128,13 +121,12 @@ def register(mcp: FastMCP, *, client: MapyClient | None = None, **_: object) -> 
     mcp.add_tool(
         Tool.from_tool(
             show_places,
-            transform_args=_URL_ONLY if client is None else None,
             annotations=ToolAnnotations(
                 title="Show places on a map",
                 readOnlyHint=True,
                 destructiveHint=False,
                 idempotentHint=True,
-                openWorldHint=client is not None,
+                openWorldHint=True,
             ),
         )
     )

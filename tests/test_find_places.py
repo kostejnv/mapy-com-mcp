@@ -1,7 +1,7 @@
 """Tests for tools/find_places.py — the geocoding MCP tool.
 
 Tests cover:
-  - Registration gate (tool absent without API key, present with one)
+  - Registration (always present) and rejected-key handling
   - Happy path via fastmcp.Client
   - Per-query near coordinate forwarded as preferNear
   - Partial failure (one query 500s, other succeeds — tool does NOT raise)
@@ -49,13 +49,6 @@ def _make_item(
 
 
 @pytest.fixture
-def mcp_no_key(monkeypatch: pytest.MonkeyPatch) -> FastMCP:
-    """FastMCP instance created without MAPY_API_KEY in the environment."""
-    monkeypatch.delenv("MAPY_API_KEY", raising=False)
-    return create_app()
-
-
-@pytest.fixture
 def mcp_with_key(monkeypatch: pytest.MonkeyPatch) -> FastMCP:
     """FastMCP instance created with MAPY_API_KEY set."""
     monkeypatch.setenv("MAPY_API_KEY", _API_KEY)
@@ -67,25 +60,8 @@ def mcp_with_key(monkeypatch: pytest.MonkeyPatch) -> FastMCP:
 # ---------------------------------------------------------------------------
 
 
-async def test_find_places_absent_without_api_key(mcp_no_key: FastMCP) -> None:
-    """find_places must NOT appear in the tool list when MAPY_API_KEY is unset."""
-    async with Client(mcp_no_key) as client:
-        tools = await client.list_tools()
-    names = [t.name for t in tools]
-    assert "find_places" not in names
-
-
-async def test_url_tools_present_without_api_key(mcp_no_key: FastMCP) -> None:
-    """URL-builder tools must always be registered regardless of API key."""
-    async with Client(mcp_no_key) as client:
-        tools = await client.list_tools()
-    names = [t.name for t in tools]
-    assert "show_places" in names
-    assert "show_route" in names
-
-
 async def test_find_places_present_with_api_key(mcp_with_key: FastMCP) -> None:
-    """find_places must appear in the tool list when MAPY_API_KEY is set."""
+    """find_places is always registered."""
     async with Client(mcp_with_key) as client:
         tools = await client.list_tools()
     names = [t.name for t in tools]
@@ -364,11 +340,33 @@ def test_instructions_include_find_places_hint_when_key_set(
     assert "find_places" in mcp_with_key.instructions
 
 
-def test_instructions_do_not_mention_find_places_without_key(
-    mcp_no_key: FastMCP,
+@respx.mock
+async def test_find_places_one_rejected_key_among_queries_raises_rejected_message(
+    mcp_with_key: FastMCP,
 ) -> None:
-    """Without MAPY_API_KEY, the base instructions must NOT reference find_places
-    (the hint is appended only when the tool is available)."""
-    assert mcp_no_key.instructions is not None
-    assert mcp_no_key.instructions.strip()
-    assert "find_places" not in mcp_no_key.instructions
+    """A 403 is not a per-query problem: the whole call fails with the key message."""
+
+    def side_effect(request: Any) -> Response:
+        if "bad" in request.url.params.get("query", ""):
+            return Response(403, text="Forbidden")
+        return Response(200, json={"items": [_make_item("Hrad", 14.4, 50.09)]})
+
+    respx.get(_GEOCODE_URL).mock(side_effect=side_effect)
+
+    async with Client(mcp_with_key) as client:
+        with pytest.raises(ToolError, match=r"Mapy\.com rejected the API key"):
+            await client.call_tool(
+                "find_places",
+                {"queries": [{"query": "Prague Castle"}, {"query": "bad"}]},
+            )
+
+
+@respx.mock
+@pytest.mark.parametrize("status", [401, 403])
+async def test_find_places_rejected_key_single_query(
+    mcp_with_key: FastMCP, status: int
+) -> None:
+    respx.get(_GEOCODE_URL).mock(return_value=Response(status))
+    async with Client(mcp_with_key) as client:
+        with pytest.raises(ToolError, match="MAPY_API_KEY"):
+            await client.call_tool("find_places", {"queries": [{"query": "x"}]})

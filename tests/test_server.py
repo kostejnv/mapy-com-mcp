@@ -17,27 +17,26 @@ from mapy_com_mcp import tools
 from mapy_com_mcp.server import create_app, main
 
 
-async def test_create_app_discovers_all_tool_modules() -> None:
-    """Every unconditional module under mapy_com_mcp.tools must contribute at least
-    one tool.  Some modules (e.g. find_places) are gated behind MAPY_API_KEY and
-    register nothing when the key is absent.  The safe invariant is therefore that
-    the number of registered tools is at least 1 (i.e., create_app didn't silently
-    drop every tool) and that every module's register() was *called* without raising.
-    The stronger per-module check lives in test_find_places.py which exercises the
-    gate directly.
-    """
-    mcp = create_app()
-    async with Client(mcp) as client:
-        registered_count = len(await client.list_tools())
-    # Without MAPY_API_KEY the URL-builder tools (show_places, show_route)
-    # must always be present.
-    assert registered_count >= 2
+async def test_create_app_registers_all_three_tools(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """All tools are registered regardless of whether a key is configured."""
+    for key in (None, "fake-test-key"):
+        if key is None:
+            monkeypatch.delenv("MAPY_API_KEY", raising=False)
+        else:
+            monkeypatch.setenv("MAPY_API_KEY", key)
+        async with Client(create_app()) as client:
+            names = {t.name for t in await client.list_tools()}
+        assert names == {"find_places", "show_places", "show_route"}
 
 
-def test_create_app_instructions_is_non_empty() -> None:
-    """FastMCP instance must have a non-empty instructions string."""
+def test_create_app_instructions_mention_all_tools() -> None:
+    """One instructions string, naming every tool, with or without a key."""
     mcp = create_app()
-    assert mcp.instructions and mcp.instructions.strip()
+    assert mcp.instructions
+    for name in ("find_places", "show_places", "show_route"):
+        assert name in mcp.instructions
 
 
 def test_main_calls_create_app_and_run() -> None:

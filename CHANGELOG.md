@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.5.0](https://github.com/kostejnv/mapy-com-mcp/compare/mapy-com-mcp-v0.4.0...mapy-com-mcp-v0.5.0) (2026-11-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* **tools:** show places and routes inline in MCP Apps clients ([#37](https://github.com/kostejnv/mapy-com-mcp/issues/37))
+* require MAPY_API_KEY for every tool ([#35](https://github.com/kostejnv/mapy-com-mcp/issues/35))
+
+### Features
+
+* require MAPY_API_KEY for every tool ([#35](https://github.com/kostejnv/mapy-com-mcp/issues/35)) ([81914aa](https://github.com/kostejnv/mapy-com-mcp/commit/81914aa38530847795a64ecbcd1c9d0eb6c23751))
+* **server:** serve over Streamable HTTP and ship a Dockerfile ([#38](https://github.com/kostejnv/mapy-com-mcp/issues/38)) ([c0f638f](https://github.com/kostejnv/mapy-com-mcp/commit/c0f638ffa27ffa31438a944ba7f811080f6e3f00))
+* **tools:** add inspect_places and plan_route for the agent ([#36](https://github.com/kostejnv/mapy-com-mcp/issues/36)) ([0e994de](https://github.com/kostejnv/mapy-com-mcp/commit/0e994de5de718195fe1d9eb841bfe5e182a39b16))
+* **tools:** show places and routes inline in MCP Apps clients ([#37](https://github.com/kostejnv/mapy-com-mcp/issues/37)) ([db05687](https://github.com/kostejnv/mapy-com-mcp/commit/db056878cfa45bd269a1eb9c9f48df85c88d9024))
+
 ## [0.4.0](https://github.com/kostejnv/mapy-com-mcp/compare/mapy-com-mcp-v0.3.0...mapy-com-mcp-v0.4.0) (2026-10-31)
 
 

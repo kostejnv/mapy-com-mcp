@@ -51,13 +51,42 @@ def test_create_app_instructions_mention_all_tools() -> None:
         assert name in mcp.instructions
 
 
-def test_main_calls_create_app_and_run() -> None:
-    """main() must call create_app() and invoke mcp.run() exactly once."""
+@pytest.mark.parametrize(
+    ("argv", "expected_run_kwargs"),
+    [
+        ([], {"transport": "stdio"}),
+        (["--transport", "stdio"], {"transport": "stdio"}),
+        (
+            ["--transport", "http"],
+            {"transport": "http", "host": "127.0.0.1", "port": 8000},
+        ),
+        (
+            ["--transport", "http", "--host", "0.0.0.0", "--port", "9000"],
+            {"transport": "http", "host": "0.0.0.0", "port": 9000},
+        ),
+        # host/port are ignored for stdio
+        (["--port", "9000"], {"transport": "stdio"}),
+    ],
+)
+def test_main_runs_app_with_selected_transport(
+    argv: list[str], expected_run_kwargs: dict[str, Any]
+) -> None:
     mock_mcp = MagicMock()
     with patch("mapy_com_mcp.server.create_app", return_value=mock_mcp) as mock_create:
-        main()
+        main(argv)
         mock_create.assert_called_once_with()
-        mock_mcp.run.assert_called_once_with()
+        mock_mcp.run.assert_called_once_with(**expected_run_kwargs)
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [["--transport", "sse"], ["--transport", "http", "--port", "abc"]],
+)
+def test_main_rejects_invalid_arguments_before_creating_app(argv: list[str]) -> None:
+    with patch("mapy_com_mcp.server.create_app") as mock_create:
+        with pytest.raises(SystemExit):
+            main(argv)
+        mock_create.assert_not_called()
 
 
 def _make_iter_modules_stub(

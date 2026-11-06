@@ -12,9 +12,6 @@ MCP server that lets LLMs find places, look at them on a real map, and hand the 
 
 </div>
 
-> [!WARNING]
-> **Preview.** Place search, places on a map and route planning work today (see below). Tool names and parameters may still change.
-
 > [!NOTE]
 > **Unofficial.** Not affiliated with, endorsed by, or supported by Seznam.cz a.s., operators of mapy.com. Trademarks belong to their respective owners.
 
@@ -55,6 +52,21 @@ Every tool needs a mapy.com API key in the `MAPY_API_KEY` environment variable. 
   }
 }
 ```
+
+## Self-hosting over HTTP
+
+By default the server talks to a local MCP client over stdio. To run it on a server instead — for example to use it from ChatGPT or Claude on the web and on mobile — run it over Streamable HTTP, most easily with Docker:
+
+```bash
+docker build -t mapy-com-mcp .
+docker run -d --name mapy-com-mcp --restart unless-stopped \
+  -e MAPY_API_KEY=your-key-here -p 127.0.0.1:8000:8000 mapy-com-mcp
+```
+
+The MCP endpoint is then `http://127.0.0.1:8000/mcp`. Without Docker, `mapy-com-mcp --transport http` does the same; it binds to `127.0.0.1:8000` unless you pass `--host` and `--port`.
+
+> [!IMPORTANT]
+> The server has no authentication of its own, and every request spends the credits of your mapy.com API key. Before exposing it to the internet, put it behind an HTTPS reverse proxy that controls who can reach it.
 
 ## License
 

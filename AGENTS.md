@@ -95,6 +95,8 @@ uv sync                                    # install deps + create .venv
 uv run pre-commit install                  # install pre-commit (one-time)
 uv run pre-commit install --hook-type commit-msg   # commit-msg hook (one-time)
 uv run mapy-com-mcp                        # run the server (stdio by default)
+uv run mapy-com-mcp --transport http       # Streamable HTTP on 127.0.0.1:8000
+docker build -t mapy-com-mcp .             # container image (HTTP, see README)
 make test                                  # run pytest
 uv run pytest --cov=src/mapy_com_mcp       # tests with coverage
 make lint                                  # pre-commit run --all-files

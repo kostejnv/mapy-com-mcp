@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import argparse
 import importlib
 import logging
 import os
 import pkgutil
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator, Callable, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 
 from fastmcp import FastMCP
@@ -56,8 +57,31 @@ def create_app() -> FastMCP:
     return mcp
 
 
-def main() -> None:
-    create_app().run()
+def main(argv: Sequence[str] | None = None) -> None:
+    args = _parse_args(argv)
+    app = create_app()
+    if args.transport == "stdio":
+        app.run(transport="stdio")
+    else:
+        app.run(transport="http", host=args.host, port=args.port)
+
+
+def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="mapy-com-mcp", description="MCP server for mapy.com."
+    )
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "http"],
+        default="stdio",
+        help="stdio for a local MCP client (default), or Streamable HTTP.",
+    )
+    # Loopback by default: the server has no authentication of its own.
+    parser.add_argument(
+        "--host", default="127.0.0.1", help="HTTP bind address (http only)."
+    )
+    parser.add_argument("--port", type=int, default=8000, help="HTTP port (http only).")
+    return parser.parse_args(argv)
 
 
 def _make_lifespan(

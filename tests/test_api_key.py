@@ -29,6 +29,8 @@ _CALLS: dict[str, dict[str, Any]] = {
     "find_places": {"queries": [{"query": "Praha"}]},
     "show_places": {"points": _POINTS, "output": "url"},
     "show_route": {"points": _POINTS, "route_type": "foot_fast", "output": "url"},
+    "inspect_places": {"points": _POINTS},
+    "plan_route": {"points": _POINTS, "route_type": "foot_fast"},
 }
 
 

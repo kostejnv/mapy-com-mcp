@@ -17,15 +17,16 @@ _LOG = logging.getLogger(__name__)
 
 _INSTRUCTIONS = (
     "First-class access to mapy.com, the Czech mapping service from "
-    "Seznam.cz. show_places puts one or more points on a map and "
-    "show_route plans a route through several points; both give the user "
-    "a mapy.com link to click. Use these whenever the user asks to see a "
-    "place on a map or get directions, especially in the Czech Republic "
-    "and surrounding region. Both also return map images with numbered "
-    "markers and a coordinate grid so you can see where places are; "
-    "show_route adds distance, time and, on foot or by bike, an elevation "
-    "profile. find_places resolves human-readable place names to "
-    "coordinates — feed its output into the map tools."
+    "Seznam.cz, especially strong in the Czech Republic and surrounding "
+    "region. When the user should see or open a map — places, or a route "
+    "with directions — use show_places or show_route: both give the user a "
+    "mapy.com link and also return map images with numbered markers and a "
+    "coordinate grid; show_route adds distance, time and, on foot or by "
+    "bike, an elevation profile. When you only need to check something "
+    "yourself before answering, use inspect_places or plan_route: same "
+    "images and numbers, but the user sees nothing and gets no link. "
+    "find_places resolves human-readable place names to coordinates — feed "
+    "its output into the map tools."
 )
 
 

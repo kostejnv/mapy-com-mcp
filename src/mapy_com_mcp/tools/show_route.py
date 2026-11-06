@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from typing import Annotated, Literal
 
 import httpx
@@ -14,38 +13,18 @@ from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from ..links.urls import MAX_ROUTE_POINTS, Language, Point, build_route_url
-from ..mapy_api.client import MapyAPIError, MapyClient, StaticMapset
-from ..mapy_api.routing import Route, RouteType
-from ..static_map.profile import (
-    ELEVATION_BATCH,
-    climb_stats,
-    render_profile,
-    sample_positions,
+from ..mapy_api.client import MapyAPIError, MapyClient
+from ..mapy_api.routing import RouteType
+from ..reports.route import (
+    PROFILE_ROUTE_TYPES,
+    NoElevationDataError,
+    elevation,
+    route_map,
+    route_summary,
+    route_warnings,
 )
-from ..static_map.render import format_distance, grid_step_m, render
-from ..static_map.viewport import fit_viewport
 
 Output = Literal["url", "map", "both"]
-
-# The static map API has no traffic layer; basic is the closest look for cars.
-_STATIC_MAPSET: dict[RouteType, StaticMapset] = {
-    "car_fast": "basic",
-    "car_short": "basic",
-    "foot_fast": "outdoor",
-    "foot_hiking": "outdoor",
-    "bike_road": "outdoor",
-    "bike_mountain": "outdoor",
-}
-# Elevation matters on foot and by bike; for cars it is noise and extra cost.
-_PROFILE_ROUTE_TYPES: frozenset[RouteType] = frozenset(
-    {"foot_fast", "foot_hiking", "bike_road", "bike_mountain"}
-)
-_SNAP_WARNING_M = 50
-_MIN_VALID_ELEVATION_M = -1000  # the API marks missing data as -100000
-
-
-class _NoElevationDataError(Exception):
-    """The route has no usable elevation profile (too short, or no data)."""
 
 
 def register(mcp: FastMCP, *, client: MapyClient, **_: object) -> None:
@@ -108,6 +87,8 @@ def register(mcp: FastMCP, *, client: MapyClient, **_: object) -> None:
         an elevation profile with min/max and total ascent/descent.
 
         Do NOT use this to merely show places on a map (use show_places).
+        To plan a route for yourself without showing the user, use
+        plan_route.
         """
         url = build_route_url(points, route_type, language)
         coords = [(p.lon, p.lat) for p in points]
@@ -118,38 +99,29 @@ def register(mcp: FastMCP, *, client: MapyClient, **_: object) -> None:
                 raise ToolError(f"Route planning failed: {exc}") from exc
             return f"Route planning failed ({exc}).\nMap link for the user: {url}"
 
-        lines = _summary(points, route_type, route)
-        warnings = _warnings(points, route)
+        lines = route_summary(points, route_type, route)
+        warnings = route_warnings(points, route)
         if output == "url":
             return "\n".join([*lines, *warnings, f"Map link for the user: {url}"])
 
         images: list[Image | str] = []
         notes: list[str] = []
-        viewport = fit_viewport([*route.geometry, *coords])
         try:
-            base = await client.static_map(
-                lon=viewport.center_lon,
-                lat=viewport.center_lat,
-                zoom=viewport.zoom,
-                width=viewport.width,
-                height=viewport.height,
-                mapset=_STATIC_MAPSET[route_type],
-                lang=language,
+            map_jpeg, grid_line = await route_map(
+                client, points, route_type, route, language
             )
         except (MapyAPIError, httpx.HTTPError) as exc:
             if output == "map":
                 raise ToolError(f"Map image unavailable: {exc}") from exc
             notes.append(f"Map image unavailable ({exc}).")
         else:
-            map_jpeg = render(base, viewport, coords, route.geometry)
             images.append(Image(data=map_jpeg, format="jpeg"))
-            grid = format_distance(grid_step_m(viewport))
-            notes.append(f"Grid: {grid} between lines.")
+            notes.append(grid_line)
 
-        if route_type in _PROFILE_ROUTE_TYPES:
+        if route_type in PROFILE_ROUTE_TYPES:
             try:
-                profile_jpeg, elevation_line = await _elevation(client, route)
-            except (MapyAPIError, httpx.HTTPError, _NoElevationDataError) as exc:
+                profile_jpeg, elevation_line = await elevation(client, route)
+            except (MapyAPIError, httpx.HTTPError, NoElevationDataError) as exc:
                 notes.append(f"Elevation profile unavailable ({exc}).")
             else:
                 images.append(Image(data=profile_jpeg, format="jpeg"))
@@ -172,85 +144,3 @@ def register(mcp: FastMCP, *, client: MapyClient, **_: object) -> None:
             ),
         )
     )
-
-
-def _summary(points: list[Point], route_type: RouteType, route: Route) -> list[str]:
-    lines = [
-        f"Route ({route_type}): {_format_length(route.length_m)}, "
-        f"{_format_duration(route.duration_s)}"
-    ]
-    # One line per leg, also for a single leg: it ties the marker numbers to
-    # the labels.
-    for number, leg in enumerate(route.legs, start=1):
-        lines.append(
-            f"{number}. {points[number - 1].label} → "
-            f"{number + 1}. {points[number].label}: "
-            f"{_format_length(leg.length_m)}, {_format_duration(leg.duration_s)}"
-        )
-    return lines
-
-
-def _warnings(points: list[Point], route: Route) -> list[str]:
-    warnings: list[str] = []
-    for number, (point, info) in enumerate(
-        zip(points, route.points, strict=True), start=1
-    ):
-        name = f"{number}. {point.label}"
-        if info.snap_distance_m > _SNAP_WARNING_M:
-            moved = f"{info.snap_distance_m} m"
-            warnings.append(f"{name} was moved {moved} to the nearest road or path.")
-        if info.restriction is not None:
-            kind = info.restriction.replace("_", " ").lower()
-            warnings.append(f"{name} lies in a restricted area ({kind}).")
-    return [f"Warnings: {' '.join(warnings)}"] if warnings else []
-
-
-async def _elevation(client: MapyClient, route: Route) -> tuple[bytes, str]:
-    """Profile image and the summary line, from sampled route elevations.
-
-    Raises _NoElevationDataError when there is nothing to plot.
-    """
-    if route.length_m == 0 or len(route.geometry) < 2:
-        raise _NoElevationDataError("route too short for a profile")
-    samples = sample_positions(route.geometry)
-    batches = [
-        [(lon, lat) for lon, lat, _ in samples[i : i + ELEVATION_BATCH]]
-        for i in range(0, len(samples), ELEVATION_BATCH)
-    ]
-    heights = [
-        h
-        for batch in await asyncio.gather(*map(client.elevation, batches))
-        for h in batch
-    ]
-    profile = [
-        (d, h)
-        for (_, _, d), h in zip(samples, heights, strict=True)
-        if h > _MIN_VALID_ELEVATION_M
-    ]
-    if len(profile) < 2:
-        raise _NoElevationDataError("no elevation data for this area")
-
-    # Route points sit at the cumulative leg lengths, scaled from the router's
-    # length to the sampled line's length so they land on the same axis.
-    scale = samples[-1][2] / route.length_m
-    point_distances = [0.0]
-    for leg in route.legs:
-        point_distances.append(point_distances[-1] + leg.length_m * scale)
-
-    stats = climb_stats([h for _, h in profile])
-    line = (
-        f"Elevation: min {stats.min_m:.0f} m, max {stats.max_m:.0f} m, "
-        f"ascent +{stats.ascent_m:.0f} m, descent -{stats.descent_m:.0f} m"
-    )
-    return render_profile(profile, point_distances, stats), line
-
-
-def _format_length(meters: int) -> str:
-    rounded = round(meters, -1)
-    return f"{meters / 1000:.1f} km" if rounded >= 1000 else f"{rounded} m"
-
-
-def _format_duration(seconds: int) -> str:
-    minutes = round(seconds / 60)
-    hours, minutes = divmod(minutes, 60)
-    return f"{hours} h {minutes:02d} min" if hours else f"{minutes} min"

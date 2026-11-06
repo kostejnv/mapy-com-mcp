@@ -17,7 +17,7 @@ from mapy_com_mcp import tools
 from mapy_com_mcp.server import create_app, main
 
 
-async def test_create_app_registers_all_three_tools(
+async def test_create_app_registers_all_five_tools(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """All tools are registered regardless of whether a key is configured."""
@@ -28,14 +28,26 @@ async def test_create_app_registers_all_three_tools(
             monkeypatch.setenv("MAPY_API_KEY", key)
         async with Client(create_app()) as client:
             names = {t.name for t in await client.list_tools()}
-        assert names == {"find_places", "show_places", "show_route"}
+        assert names == {
+            "find_places",
+            "show_places",
+            "show_route",
+            "inspect_places",
+            "plan_route",
+        }
 
 
 def test_create_app_instructions_mention_all_tools() -> None:
     """One instructions string, naming every tool, with or without a key."""
     mcp = create_app()
     assert mcp.instructions
-    for name in ("find_places", "show_places", "show_route"):
+    for name in (
+        "find_places",
+        "show_places",
+        "show_route",
+        "inspect_places",
+        "plan_route",
+    ):
         assert name in mcp.instructions
 
 

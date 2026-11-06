@@ -27,8 +27,8 @@ _POINTS = [
 ]
 _CALLS: dict[str, dict[str, Any]] = {
     "find_places": {"queries": [{"query": "Praha"}]},
-    "show_places": {"points": _POINTS, "output": "url"},
-    "show_route": {"points": _POINTS, "route_type": "foot_fast", "output": "url"},
+    "show_places": {"points": _POINTS},
+    "show_route": {"points": _POINTS, "route_type": "foot_fast"},
     "inspect_places": {"points": _POINTS},
     "plan_route": {"points": _POINTS, "route_type": "foot_fast"},
 }
@@ -111,7 +111,7 @@ async def test_rejected_message_replaces_generic_tool_error(
 
 
 @respx.mock
-async def test_url_output_works_with_key_that_would_be_rejected(
+async def test_show_places_link_works_with_key_that_would_be_rejected(
     mcp_with_key: FastMCP,
 ) -> None:
     route = respx.route().mock(return_value=Response(401))
@@ -138,7 +138,7 @@ async def test_non_key_errors_do_not_show_rejected_message(
     async with Client(mcp_with_key) as client:
         result = await client.call_tool(
             "show_route",
-            {"points": _POINTS, "route_type": "foot_fast", "output": "both"},
+            {"points": _POINTS, "route_type": "foot_fast"},
         )
     assert not result.is_error
     assert "rejected the API key" not in str(result.content)

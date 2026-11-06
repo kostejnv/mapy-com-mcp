@@ -56,18 +56,27 @@ def grid_step_m(viewport: Viewport) -> float:
     return min(candidates, key=lambda step: abs(span_m // step - _TARGET_GRID_LINES))
 
 
+def grid_line(viewport: Viewport) -> str:
+    """The line that tells the model how far apart the grid lines are."""
+    return f"Grid: {format_distance(grid_step_m(viewport))} between lines."
+
+
 def render(
     base_image: bytes,
     viewport: Viewport,
     points: list[tuple[float, float]],
     route: list[tuple[float, float]] | None = None,
+    *,
+    grid: bool = True,
 ) -> bytes:
     """Overlay grid, legend, an optional route line and numbered markers.
 
     Returns JPEG bytes. The route sits between the grid and the markers.
+    The grid is for the model; turn it off for images meant for people.
     """
     img = Image.open(io.BytesIO(base_image)).convert("RGBA")
-    img = _draw_grid(img, viewport)
+    if grid:
+        img = _draw_grid(img, viewport)
     if route:
         img = _draw_route(img, viewport, route)
     for number, (lon, lat) in enumerate(points, start=1):

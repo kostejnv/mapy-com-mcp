@@ -11,6 +11,7 @@ from fastmcp import FastMCP
 
 from . import tools
 from .api_key import APIKeyGuard
+from .map_view import register_map_view
 from .mapy_api.client import MapyClient
 
 _LOG = logging.getLogger(__name__)
@@ -19,14 +20,15 @@ _INSTRUCTIONS = (
     "First-class access to mapy.com, the Czech mapping service from "
     "Seznam.cz, especially strong in the Czech Republic and surrounding "
     "region. When the user should see or open a map — places, or a route "
-    "with directions — use show_places or show_route: both give the user a "
-    "mapy.com link and also return map images with numbered markers and a "
-    "coordinate grid; show_route adds distance, time and, on foot or by "
-    "bike, an elevation profile. When you only need to check something "
-    "yourself before answering, use inspect_places or plan_route: same "
-    "images and numbers, but the user sees nothing and gets no link. "
-    "find_places resolves human-readable place names to coordinates — feed "
-    "its output into the map tools."
+    "with directions — use show_places or show_route: the user gets the map "
+    "right in the chat where the client supports it, or a mapy.com link to "
+    "pass on; show_route also gives you distance and time. When you need to "
+    "look at places or a route yourself before answering, use "
+    "inspect_places or plan_route: map images with numbered markers and a "
+    "coordinate grid, plus route numbers and, on foot or by bike, an "
+    "elevation profile — the user sees nothing. find_places resolves "
+    "human-readable place names to coordinates — feed its output into the "
+    "map tools."
 )
 
 
@@ -44,6 +46,7 @@ def create_app() -> FastMCP:
         lifespan=_make_lifespan(client),
         middleware=[APIKeyGuard(key_configured=bool(api_key))],
     )
+    register_map_view(mcp)
     for info in pkgutil.iter_modules(tools.__path__):
         module = importlib.import_module(f"{tools.__name__}.{info.name}")
         register = getattr(module, "register", None)

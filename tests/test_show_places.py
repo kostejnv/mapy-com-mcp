@@ -1,10 +1,13 @@
-"""Tests for tools/show_places.py — url / map / both output modes.
+"""Tests for tools/show_places.py — link-only vs inline map view paths.
 
-All HTTP is mocked with respx; no real network calls are made.
+All HTTP is mocked with respx; no real network calls are made. The UI path is
+driven with the ui_client fixture (conftest), which makes the client look
+like one that advertises the MCP Apps extension.
 """
 
 from __future__ import annotations
 
+import base64
 import io
 from typing import Any
 
@@ -17,6 +20,7 @@ from httpx import Response
 from mcp.types import ImageContent, TextContent
 from PIL import Image
 
+from mapy_com_mcp.map_view import MAP_VIEW_URI
 from mapy_com_mcp.server import create_app
 
 _STATIC_URL = "https://api.mapy.com/v1/static/map"
@@ -59,122 +63,158 @@ def _text(result: Any) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Link building and input validation (output="url", no API call)
+# Schema and validation
 # ---------------------------------------------------------------------------
 
 
-@respx.mock
-async def test_url_output_multi_point_uses_vlastni_body(mcp_with_key: FastMCP) -> None:
-    result = await _call(mcp_with_key, points=_POINTS, output="url")
-    assert len(result.content) == 1
-    assert _text(result).startswith("https://mapy.com/en/turisticka?vlastni-body")
+async def test_schema_has_no_output_or_zoom_and_is_open_world(
+    mcp_with_key: FastMCP,
+) -> None:
+    tool = await _tool(mcp_with_key)
+    assert set(tool.inputSchema["properties"]) == {"points", "mapset", "language"}
+    assert tool.annotations.openWorldHint is True
 
 
-@respx.mock
-async def test_url_output_single_point_uses_showmap(mcp_with_key: FastMCP) -> None:
-    url = _text(await _call(mcp_with_key, points=_ONE_POINT, output="url"))
-    assert url.startswith("https://mapy.com/fnc/v1/showmap?")
-    assert "center=14.4003,50.0907" in url
-    assert "zoom=16" in url
+async def test_tool_meta_points_at_the_map_view(mcp_with_key: FastMCP) -> None:
+    tool = await _tool(mcp_with_key)
+    assert tool.meta["ui"]["resourceUri"] == MAP_VIEW_URI
 
 
 async def test_empty_points_raises_tool_error(mcp_with_key: FastMCP) -> None:
     with pytest.raises(ToolError):
-        await _call(mcp_with_key, points=[], output="url")
+        await _call(mcp_with_key, points=[])
 
 
 async def test_empty_label_raises_tool_error(mcp_with_key: FastMCP) -> None:
     with pytest.raises(ToolError):
-        await _call(
-            mcp_with_key,
-            points=[{"lon": 14.0, "lat": 50.0, "label": ""}],
-            output="url",
-        )
-
-
-async def test_schema_has_no_zoom_field(mcp_with_key: FastMCP) -> None:
-    props = (await _tool(mcp_with_key)).inputSchema["properties"]
-    assert "zoom" not in props
+        await _call(mcp_with_key, points=[{"lon": 14.0, "lat": 50.0, "label": ""}])
 
 
 # ---------------------------------------------------------------------------
-# With an API key
+# Client without the UI extension: text + link, no static API
 # ---------------------------------------------------------------------------
-
-
-async def test_with_key_schema_exposes_output_and_open_world(
-    mcp_with_key: FastMCP,
-) -> None:
-    tool = await _tool(mcp_with_key)
-    assert set(tool.inputSchema["properties"]) == {
-        "points",
-        "output",
-        "mapset",
-        "language",
-    }
-    assert tool.annotations.openWorldHint is True
 
 
 @respx.mock
-async def test_output_url_returns_link_without_calling_static_api(
+async def test_without_ui_returns_link_text_only_and_no_http(
     mcp_with_key: FastMCP,
 ) -> None:
-    route = respx.get(_STATIC_URL).mock(side_effect=_static_png_response)
-    result = await _call(mcp_with_key, points=_POINTS, output="url")
-    assert _text(result).startswith("https://mapy.com/")
+    route = respx.route().mock(side_effect=_static_png_response)
+    result = await _call(mcp_with_key, points=_POINTS)
     assert len(result.content) == 1
+    text = _text(result)
+    assert text.startswith(
+        "Give the user this mapy.com link to the places: "
+        "https://mapy.com/en/turisticka?vlastni-body"
+    )
+    assert "1. Prague Castle\n2. Old Town Square" in text
+    assert not route.called
+    assert not result.meta
+    assert result.structured_content is None
+
+
+@respx.mock
+async def test_without_ui_single_point_uses_showmap(mcp_with_key: FastMCP) -> None:
+    text = _text(await _call(mcp_with_key, points=_ONE_POINT))
+    assert "https://mapy.com/fnc/v1/showmap?" in text
+    assert "center=14.4003,50.0907" in text
+    assert "zoom=16" in text
+
+
+async def test_without_ui_traffic_mapset_in_link(mcp_with_key: FastMCP) -> None:
+    text = _text(await _call(mcp_with_key, points=_POINTS, mapset="traffic"))
+    assert "/dopravni?" in text
+
+
+async def test_pole_point_does_not_raise(mcp_with_key: FastMCP) -> None:
+    points = [{"lon": 0.0, "lat": 90.0, "label": "North Pole"}]
+    assert "https://mapy.com/" in _text(await _call(mcp_with_key, points=points))
+
+
+@respx.mock
+async def test_without_ui_works_with_key_that_would_be_rejected(
+    mcp_with_key: FastMCP,
+) -> None:
+    route = respx.route().mock(return_value=Response(401))
+    result = await _call(mcp_with_key, points=_POINTS)
+    assert not result.is_error
     assert not route.called
 
 
-@respx.mock
-async def test_output_map_returns_jpeg_image_and_legend(mcp_with_key: FastMCP) -> None:
-    respx.get(_STATIC_URL).mock(side_effect=_static_png_response)
-    result = await _call(mcp_with_key, points=_POINTS, output="map")
-    image, legend = result.content
-    assert isinstance(image, ImageContent)
-    assert image.mimeType == "image/jpeg"
-    assert isinstance(legend, TextContent)
-    assert legend.text.startswith("1. Prague Castle\n2. Old Town Square\nGrid: ")
-    assert legend.text.endswith(" between lines.")
-    assert "mapy.com" not in legend.text
+# ---------------------------------------------------------------------------
+# Client with the UI extension: meta carries the map
+# ---------------------------------------------------------------------------
 
 
 @respx.mock
-async def test_output_both_is_default_and_adds_link_to_legend(
+@pytest.mark.usefixtures("ui_client")
+async def test_with_ui_returns_meta_with_jpeg_map_and_text_without_base64(
     mcp_with_key: FastMCP,
 ) -> None:
     respx.get(_STATIC_URL).mock(side_effect=_static_png_response)
+    result = await _call(mcp_with_key, points=_POINTS, language="cs")
+    meta = result.meta
+    assert meta["language"] == "cs"
+    assert meta["map_url"].startswith("https://mapy.com/cs/turisticka?vlastni-body")
+    jpeg = base64.b64decode(meta["map_image_jpeg_base64"])
+    assert Image.open(io.BytesIO(jpeg)).format == "JPEG"
+    assert not any(isinstance(c, ImageContent) for c in result.content)
+    assert result.structured_content is None
+    text = _text(result)
+    assert text.startswith("The user now sees these places on a map")
+    assert "1. Prague Castle\n2. Old Town Square" in text
+    assert meta["map_image_jpeg_base64"] not in text
+    assert "https://" not in text
+
+
+@respx.mock
+@pytest.mark.usefixtures("ui_client")
+async def test_with_ui_map_is_landscape_1024x640_without_grid(
+    mcp_with_key: FastMCP,
+) -> None:
+    route = respx.get(_STATIC_URL).mock(side_effect=_static_png_response)
     result = await _call(mcp_with_key, points=_POINTS)
-    image, legend = result.content
-    assert isinstance(image, ImageContent)
-    assert isinstance(legend, TextContent)
-    assert "1. Prague Castle" in legend.text
-    assert "\nMap link for the user: https://mapy.com/" in legend.text
-
-
-@respx.mock
-async def test_image_is_rendered_at_viewport_size(mcp_with_key: FastMCP) -> None:
-    route = respx.get(_STATIC_URL).mock(side_effect=_static_png_response)
-    result = await _call(mcp_with_key, points=_POINTS, output="map")
     params = route.calls.last.request.url.params
-    import base64
-
-    img = Image.open(io.BytesIO(base64.b64decode(result.content[0].data)))  # type: ignore[union-attr]  # first content is ImageContent
-    assert img.size == (int(params["width"]), int(params["height"]))
+    assert (int(params["width"]), int(params["height"])) == (1024, 640)
+    jpeg = base64.b64decode(result.meta["map_image_jpeg_base64"])
+    assert Image.open(io.BytesIO(jpeg)).size == (1024, 640)
+    assert "Grid" not in _text(result)
 
 
 @respx.mock
-async def test_static_api_receives_apikey_and_viewport(mcp_with_key: FastMCP) -> None:
+@pytest.mark.usefixtures("ui_client")
+async def test_with_ui_landscape_even_for_tall_point_sets(
+    mcp_with_key: FastMCP,
+) -> None:
     route = respx.get(_STATIC_URL).mock(side_effect=_static_png_response)
-    await _call(mcp_with_key, points=_POINTS, output="map", language="cs")
+    tall = [
+        {"lon": 14.40, "lat": 49.0, "label": "S"},
+        {"lon": 14.41, "lat": 51.0, "label": "N"},
+    ]
+    await _call(mcp_with_key, points=tall)
+    params = route.calls.last.request.url.params
+    assert int(params["width"]) > int(params["height"])
+
+
+@respx.mock
+@pytest.mark.usefixtures("ui_client")
+async def test_with_ui_static_api_params_and_link_share_viewport(
+    mcp_with_key: FastMCP,
+) -> None:
+    route = respx.get(_STATIC_URL).mock(side_effect=_static_png_response)
+    result = await _call(mcp_with_key, points=_POINTS, language="cs")
     params = route.calls.last.request.url.params
     assert params["apikey"] == "fake-test-key"
-    assert params["mapset"] == "outdoor"
     assert params["lang"] == "cs"
     assert params["format"] == "png"
+    url = result.meta["map_url"]
+    assert f"z={params['zoom']}" in url
+    assert f"x={round(float(params['lon']), 6)}" in url
+    assert f"y={round(float(params['lat']), 6)}" in url
 
 
 @respx.mock
+@pytest.mark.usefixtures("ui_client")
 @pytest.mark.parametrize(
     "mapset,expected",
     [
@@ -185,117 +225,91 @@ async def test_static_api_receives_apikey_and_viewport(mcp_with_key: FastMCP) ->
         ("aerial", "aerial"),
     ],
 )
-async def test_static_mapset_mapping(
+async def test_with_ui_static_mapset_mapping(
     mcp_with_key: FastMCP, mapset: str, expected: str
 ) -> None:
     route = respx.get(_STATIC_URL).mock(side_effect=_static_png_response)
-    result = await _call(mcp_with_key, points=_POINTS, output="map", mapset=mapset)
+    result = await _call(mcp_with_key, points=_POINTS, mapset=mapset)
     assert route.calls.last.request.url.params["mapset"] == expected
     assert not result.is_error
 
 
 @respx.mock
-async def test_traffic_mapset_still_used_in_link(mcp_with_key: FastMCP) -> None:
+@pytest.mark.usefixtures("ui_client")
+async def test_with_ui_traffic_mapset_still_used_in_link(
+    mcp_with_key: FastMCP,
+) -> None:
     respx.get(_STATIC_URL).mock(side_effect=_static_png_response)
     result = await _call(mcp_with_key, points=_POINTS, mapset="traffic")
-    assert "/dopravni?" in _text(result)
+    assert "/dopravni?" in result.meta["map_url"]
 
 
 @respx.mock
-async def test_image_and_link_share_the_same_viewport(mcp_with_key: FastMCP) -> None:
+@pytest.mark.usefixtures("ui_client")
+async def test_with_ui_single_point_zoom_16(mcp_with_key: FastMCP) -> None:
     route = respx.get(_STATIC_URL).mock(side_effect=_static_png_response)
-    result = await _call(mcp_with_key, points=_POINTS)
-    params = route.calls.last.request.url.params
-    link = _text(result).split("Map link for the user: ")[1]
-    assert f"z={params['zoom']}" in link
-    assert f"x={round(float(params['lon']), 6)}" in link
-    assert f"y={round(float(params['lat']), 6)}" in link
-
-
-@respx.mock
-async def test_single_point_map_works(mcp_with_key: FastMCP) -> None:
-    route = respx.get(_STATIC_URL).mock(side_effect=_static_png_response)
-    result = await _call(mcp_with_key, points=_ONE_POINT, output="both")
+    result = await _call(mcp_with_key, points=_ONE_POINT)
     assert route.calls.last.request.url.params["zoom"] == "16"
-    assert "showmap" in _text(result)
+    assert "showmap" in result.meta["map_url"]
 
 
 @respx.mock
-async def test_50_points_render(mcp_with_key: FastMCP) -> None:
+@pytest.mark.usefixtures("ui_client")
+async def test_with_ui_50_points_render(mcp_with_key: FastMCP) -> None:
     respx.get(_STATIC_URL).mock(side_effect=_static_png_response)
     points = [
         {"lon": 14.0 + 0.01 * i, "lat": 50.0 + 0.005 * i, "label": f"P{i}"}
         for i in range(50)
     ]
-    result = await _call(mcp_with_key, points=points, output="map")
-    assert isinstance(result.content[0], ImageContent)
+    result = await _call(mcp_with_key, points=points)
+    assert "map_image_jpeg_base64" in result.meta
     assert "50. P49" in _text(result)
 
 
-# ---------------------------------------------------------------------------
-# Failures
-# ---------------------------------------------------------------------------
-
-
 @respx.mock
-@pytest.mark.parametrize("status", [500, 422])
-async def test_both_falls_back_to_text_with_link_on_api_error(
-    mcp_with_key: FastMCP, status: int
+@pytest.mark.usefixtures("ui_client")
+@pytest.mark.parametrize("language", ["sk", "de", "pl"])
+async def test_with_ui_other_languages_map_to_en_in_meta(
+    mcp_with_key: FastMCP, language: str
 ) -> None:
-    respx.get(_STATIC_URL).mock(return_value=Response(status, text="nope"))
-    result = await _call(mcp_with_key, points=_POINTS, output="both")
+    respx.get(_STATIC_URL).mock(side_effect=_static_png_response)
+    result = await _call(mcp_with_key, points=_POINTS, language=language)
+    assert result.meta["language"] == "en"
+
+
+# ---------------------------------------------------------------------------
+# UI path failures
+# ---------------------------------------------------------------------------
+
+
+@respx.mock
+@pytest.mark.usefixtures("ui_client")
+@pytest.mark.parametrize(
+    "failure",
+    [Response(500, text="nope"), Response(422, text="bad"), httpx.ConnectTimeout("x")],
+    ids=["500", "422", "timeout"],
+)
+async def test_with_ui_map_failure_degrades_to_note_and_meta_without_image(
+    mcp_with_key: FastMCP, failure: Response | Exception
+) -> None:
+    if isinstance(failure, Exception):
+        respx.get(_STATIC_URL).mock(side_effect=failure)
+    else:
+        respx.get(_STATIC_URL).mock(return_value=failure)
+    result = await _call(mcp_with_key, points=_POINTS)
     assert not result.is_error
-    assert len(result.content) == 1
+    assert set(result.meta) == {"map_url", "language"}
     text = _text(result)
-    assert text.startswith("Map image unavailable (")
-    assert "\nMap link for the user: https://mapy.com/" in text
+    assert text.startswith("The map image could not be drawn (")
+    assert "1. Prague Castle" in text
 
 
 @respx.mock
-async def test_both_falls_back_on_network_error(mcp_with_key: FastMCP) -> None:
-    respx.get(_STATIC_URL).mock(side_effect=httpx.ConnectTimeout("slow"))
-    result = await _call(mcp_with_key, points=_POINTS, output="both")
-    assert _text(result).startswith("Map image unavailable (")
-    assert "Map link for the user: https://mapy.com/" in _text(result)
-
-
-@respx.mock
-async def test_map_raises_tool_error_on_api_error(mcp_with_key: FastMCP) -> None:
-    respx.get(_STATIC_URL).mock(return_value=Response(500))
-    with pytest.raises(ToolError, match="Map image unavailable"):
-        await _call(mcp_with_key, points=_POINTS, output="map")
-
-
-@respx.mock
-async def test_map_raises_tool_error_on_network_error(mcp_with_key: FastMCP) -> None:
-    respx.get(_STATIC_URL).mock(side_effect=httpx.ConnectError("down"))
-    with pytest.raises(ToolError, match="Map image unavailable"):
-        await _call(mcp_with_key, points=_POINTS, output="map")
-
-
-async def test_pole_point_does_not_raise(mcp_with_key: FastMCP) -> None:
-    points = [{"lon": 0.0, "lat": 90.0, "label": "North Pole"}]
-    result = await _call(mcp_with_key, points=points, output="url")
-    assert _text(result).startswith("https://mapy.com/")
-
-
-@respx.mock
+@pytest.mark.usefixtures("ui_client")
 @pytest.mark.parametrize("status", [401, 403])
-@pytest.mark.parametrize("output", ["both", "map"])
-async def test_rejected_key_raises_rejected_message(
-    mcp_with_key: FastMCP, status: int, output: str
+async def test_with_ui_rejected_key_raises_rejected_message(
+    mcp_with_key: FastMCP, status: int
 ) -> None:
     respx.get(_STATIC_URL).mock(return_value=Response(status))
     with pytest.raises(ToolError, match=r"Mapy\.com rejected the API key"):
-        await _call(mcp_with_key, points=_POINTS, output=output)
-
-
-@respx.mock
-async def test_url_output_with_rejected_key_still_succeeds(
-    mcp_with_key: FastMCP,
-) -> None:
-    route = respx.get(_STATIC_URL).mock(return_value=Response(401))
-    result = await _call(mcp_with_key, points=_POINTS, output="url")
-    assert not result.is_error
-    assert _text(result).startswith("https://mapy.com/")
-    assert not route.called
+        await _call(mcp_with_key, points=_POINTS)

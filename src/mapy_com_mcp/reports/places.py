@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ..links.urls import Point, PointsMapset
 from ..mapy_api.client import MapyClient, StaticMapset
-from ..static_map.render import format_distance, grid_step_m, render
+from ..static_map.render import grid_line, render
 from ..static_map.viewport import Viewport
 
 # The static map API has no traffic layer; basic is the closest look.
@@ -23,6 +23,8 @@ async def places_map(
     viewport: Viewport,
     mapset: PointsMapset,
     language: str,
+    *,
+    grid: bool = True,
 ) -> bytes:
     """JPEG of the viewport with the points numbered in input order."""
     base = await client.static_map(
@@ -34,11 +36,14 @@ async def places_map(
         mapset=_STATIC_MAPSET[mapset],
         lang=language,
     )
-    return render(base, viewport, [(p.lon, p.lat) for p in points])
+    return render(base, viewport, [(p.lon, p.lat) for p in points], grid=grid)
+
+
+def numbered_labels(points: list[Point]) -> str:
+    """Marker numbers → labels, one per line."""
+    return "\n".join(f"{number}. {p.label}" for number, p in enumerate(points, start=1))
 
 
 def legend(points: list[Point], viewport: Viewport) -> str:
     """Marker numbers → labels, and the grid spacing."""
-    lines = [f"{number}. {p.label}" for number, p in enumerate(points, start=1)]
-    lines.append(f"Grid: {format_distance(grid_step_m(viewport))} between lines.")
-    return "\n".join(lines)
+    return f"{numbered_labels(points)}\n{grid_line(viewport)}"

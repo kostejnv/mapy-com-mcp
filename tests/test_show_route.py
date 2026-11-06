@@ -1,10 +1,13 @@
-"""Tests for tools/show_route.py — url / map / both modes, profile, fallbacks.
+"""Tests for tools/show_route.py — link-only vs inline map view paths.
 
-All HTTP is mocked with respx; no real network calls are made.
+All HTTP is mocked with respx; no real network calls are made. The UI path is
+driven with the ui_client fixture (conftest), which makes the client look
+like one that advertises the MCP Apps extension.
 """
 
 from __future__ import annotations
 
+import base64
 import io
 from typing import Any
 
@@ -17,6 +20,7 @@ from httpx import Response
 from mcp.types import ImageContent, TextContent
 from PIL import Image
 
+from mapy_com_mcp.map_view import MAP_VIEW_URI
 from mapy_com_mcp.server import create_app
 
 _ROUTE_URL = "https://api.mapy.com/v1/routing/route"
@@ -86,6 +90,10 @@ def _images(result: Any) -> list[ImageContent]:
     return [c for c in result.content if isinstance(c, ImageContent)]
 
 
+def _jpeg_size(b64: str) -> tuple[int, int]:
+    return Image.open(io.BytesIO(base64.b64decode(b64))).size
+
+
 # ---------------------------------------------------------------------------
 # Input validation and registration
 # ---------------------------------------------------------------------------
@@ -93,9 +101,18 @@ def _images(result: Any) -> list[ImageContent]:
 
 async def test_too_few_points_is_rejected(mcp_with_key: FastMCP) -> None:
     with pytest.raises(ToolError):
-        await _call(
-            mcp_with_key, points=_POINTS[:1], route_type="foot_fast", output="url"
-        )
+        await _call(mcp_with_key, points=_POINTS[:1], route_type="foot_fast")
+
+
+async def test_schema_has_no_output_and_is_open_world(mcp_with_key: FastMCP) -> None:
+    async with Client(mcp_with_key) as client:
+        tool = next(t for t in await client.list_tools() if t.name == "show_route")
+    assert set(tool.inputSchema["properties"]) == {"points", "route_type", "language"}
+    assert "route_type" in tool.inputSchema["required"]
+    assert tool.annotations is not None
+    assert tool.annotations.openWorldHint is True
+    assert tool.meta is not None
+    assert tool.meta["ui"]["resourceUri"] == MAP_VIEW_URI
 
 
 async def test_build_route_url_tool_is_gone(mcp_with_key: FastMCP) -> None:
@@ -106,45 +123,30 @@ async def test_build_route_url_tool_is_gone(mcp_with_key: FastMCP) -> None:
 
 
 # ---------------------------------------------------------------------------
-# With a key: schema
-# ---------------------------------------------------------------------------
-
-
-async def test_with_key_schema_exposes_output_default_both(
-    mcp_with_key: FastMCP,
-) -> None:
-    async with Client(mcp_with_key) as client:
-        tool = next(t for t in await client.list_tools() if t.name == "show_route")
-    props = tool.inputSchema["properties"]
-    assert set(props) == {"points", "route_type", "output", "language"}
-    assert props["output"]["default"] == "both"
-    assert "route_type" in tool.inputSchema["required"]
-    assert tool.annotations is not None
-    assert tool.annotations.openWorldHint is True
-
-
-# ---------------------------------------------------------------------------
-# url mode
+# Client without the UI extension: summary + link, one routing call
 # ---------------------------------------------------------------------------
 
 
 @respx.mock
-async def test_url_mode_one_routing_call_no_images_no_elevation(
+async def test_without_ui_one_routing_call_no_images_no_elevation_no_meta(
     mcp_with_key: FastMCP,
 ) -> None:
     routing = respx.get(_ROUTE_URL).respond(200, json=_route_body())
     static = respx.get(_STATIC_URL).mock(side_effect=_static_response)
     elevation = respx.get(_ELEVATION_URL).mock(side_effect=_elevation_response)
-    result = await _call(
-        mcp_with_key, points=_POINTS, route_type="foot_hiking", output="url"
-    )
+    result = await _call(mcp_with_key, points=_POINTS, route_type="foot_hiking")
     assert routing.call_count == 1
     assert not static.called and not elevation.called
     assert _images(result) == []
+    assert not result.meta
+    assert result.structured_content is None
     text = _text(result)
     assert "Route (foot_hiking): 3.8 km, 49 min" in text
     assert "Elevation" not in text
-    assert "Map link for the user: https://mapy.com/fnc/v1/route" in text
+    last = text.splitlines()[-1]
+    assert last.startswith(
+        "Give the user this mapy.com link to the route: https://mapy.com/fnc/v1/route"
+    )
 
 
 @respx.mock
@@ -153,21 +155,12 @@ async def test_routing_request_params(mcp_with_key: FastMCP) -> None:
         200, json=_route_body(legs=[(1000, 600), (2000, 1200)])
     )
     await _call(
-        mcp_with_key,
-        points=_THREE_POINTS,
-        route_type="car_short",
-        output="url",
-        language="cs",
+        mcp_with_key, points=_THREE_POINTS, route_type="car_short", language="cs"
     )
     params = routing.calls.last.request.url.params
     assert params["routeType"] == "car_short"
     assert params["lang"] == "cs"
     assert params["waypoints"] == "14.42,50.08"
-
-
-# ---------------------------------------------------------------------------
-# Summary formatting
-# ---------------------------------------------------------------------------
 
 
 @respx.mock
@@ -184,9 +177,7 @@ async def test_summary_distance_and_duration_formats(
     mcp_with_key: FastMCP, length: int, seconds: int, expected: str
 ) -> None:
     respx.get(_ROUTE_URL).respond(200, json=_route_body(legs=[(length, seconds)]))
-    result = await _call(
-        mcp_with_key, points=_POINTS, route_type="car_fast", output="url"
-    )
+    result = await _call(mcp_with_key, points=_POINTS, route_type="car_fast")
     assert expected in _text(result)
 
 
@@ -197,14 +188,17 @@ async def test_per_leg_lines_tie_marker_numbers_to_labels(
     respx.get(_ROUTE_URL).respond(
         200, json=_route_body(legs=[(1200, 900), (2600, 2040)])
     )
-    text = _text(
-        await _call(
-            mcp_with_key, points=_THREE_POINTS, route_type="car_fast", output="url"
-        )
-    )
+    text = _text(await _call(mcp_with_key, points=_THREE_POINTS, route_type="car_fast"))
     assert "Route (car_fast): 3.8 km, 49 min" in text
     assert "1. Castle → 2. Square: 1.2 km, 15 min" in text
     assert "2. Square → 3. Park: 2.6 km, 34 min" in text
+
+
+@respx.mock
+async def test_single_leg_route_still_lists_the_leg(mcp_with_key: FastMCP) -> None:
+    respx.get(_ROUTE_URL).respond(200, json=_route_body())
+    text = _text(await _call(mcp_with_key, points=_POINTS, route_type="car_fast"))
+    assert "1. Castle → 2. Square: 3.8 km, 49 min" in text
 
 
 @respx.mock
@@ -222,11 +216,7 @@ async def test_warnings_for_snapped_and_restricted_points(
             ],
         ),
     )
-    text = _text(
-        await _call(
-            mcp_with_key, points=_THREE_POINTS, route_type="car_fast", output="url"
-        )
-    )
+    text = _text(await _call(mcp_with_key, points=_THREE_POINTS, route_type="car_fast"))
     warnings = next(line for line in text.splitlines() if line.startswith("Warnings:"))
     assert "1. Castle" not in warnings
     assert "2. Square was moved 120 m to the nearest road or path." in warnings
@@ -238,19 +228,63 @@ async def test_warnings_for_snapped_and_restricted_points(
 @respx.mock
 async def test_no_warnings_line_when_all_clear(mcp_with_key: FastMCP) -> None:
     respx.get(_ROUTE_URL).respond(200, json=_route_body())
-    text = _text(
-        await _call(mcp_with_key, points=_POINTS, route_type="car_fast", output="url")
-    )
+    text = _text(await _call(mcp_with_key, points=_POINTS, route_type="car_fast"))
     assert "Warnings" not in text
 
 
+@respx.mock
+async def test_without_ui_warnings_come_before_the_link(
+    mcp_with_key: FastMCP,
+) -> None:
+    respx.get(_ROUTE_URL).respond(
+        200, json=_route_body(route_points=[{"snapDistance": 90}, {"snapDistance": 0}])
+    )
+    lines = _text(
+        await _call(mcp_with_key, points=_POINTS, route_type="car_fast")
+    ).splitlines()
+    assert lines[-2].startswith("Warnings:")
+    assert lines[-1].startswith("Give the user this mapy.com link")
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    "failure",
+    [Response(500), httpx.ConnectTimeout("slow")],
+    ids=["500", "timeout"],
+)
+async def test_without_ui_routing_failure_gives_text_with_link(
+    mcp_with_key: FastMCP, failure: Response | Exception
+) -> None:
+    if isinstance(failure, Exception):
+        respx.get(_ROUTE_URL).mock(side_effect=failure)
+    else:
+        respx.get(_ROUTE_URL).mock(return_value=failure)
+    result = await _call(mcp_with_key, points=_POINTS, route_type="foot_fast")
+    assert not result.is_error
+    text = _text(result)
+    assert text.startswith("Route planning failed (")
+    assert "Give the user this mapy.com link to the route: https://mapy.com/" in text
+    assert not result.meta
+
+
+@respx.mock
+@pytest.mark.parametrize("status", [401, 403])
+async def test_without_ui_rejected_key_on_routing_raises_rejected_message(
+    mcp_with_key: FastMCP, status: int
+) -> None:
+    respx.get(_ROUTE_URL).respond(status)
+    with pytest.raises(ToolError, match=r"Mapy\.com rejected the API key"):
+        await _call(mcp_with_key, points=_POINTS, route_type="foot_fast")
+
+
 # ---------------------------------------------------------------------------
-# both / map modes
+# Client with the UI extension
 # ---------------------------------------------------------------------------
 
 
 @respx.mock
-async def test_both_mode_foot_returns_map_profile_and_text(
+@pytest.mark.usefixtures("ui_client")
+async def test_with_ui_foot_meta_has_map_numbers_profile_and_sparkline(
     mcp_with_key: FastMCP,
 ) -> None:
     respx.get(_ROUTE_URL).respond(200, json=_route_body())
@@ -258,51 +292,103 @@ async def test_both_mode_foot_returns_map_profile_and_text(
     elevation = respx.get(_ELEVATION_URL).mock(side_effect=_elevation_response)
     result = await _call(mcp_with_key, points=_POINTS, route_type="foot_fast")
 
-    kinds: list[type] = [type(c) for c in result.content]
-    assert kinds == [ImageContent, ImageContent, TextContent]
-    sizes = [Image.open(io.BytesIO(_decode(i))).size for i in _images(result)]
-    assert sizes[1] == (1024, 280)
-    assert static.calls.last.request.url.params["mapset"] == "outdoor"
+    meta = result.meta
+    assert set(meta) == {
+        "map_url",
+        "language",
+        "map_image_jpeg_base64",
+        "route_length_m",
+        "route_duration_s",
+        "profile_image_jpeg_base64",
+        "elevation_sparkline",
+    }
+    assert meta["route_length_m"] == 3800
+    assert meta["route_duration_s"] == 2940
+    assert meta["map_url"].startswith("https://mapy.com/fnc/v1/route")
+    assert _jpeg_size(meta["map_image_jpeg_base64"]) == (1024, 640)
+    assert _jpeg_size(meta["profile_image_jpeg_base64"]) == (1024, 280)
+    assert all(isinstance(v, int) for v in meta["elevation_sparkline"])
+    assert len(meta["elevation_sparkline"]) > 1
     assert elevation.call_count == 1
-    text = _text(result)
-    assert "Elevation: min 300 m, max 326 m" in text
-    assert "Grid:" in text
-    assert text.splitlines()[-1].startswith("Map link for the user: https://mapy.com/")
-
-
-def _decode(image: ImageContent) -> bytes:
-    import base64
-
-    return base64.b64decode(image.data)
+    params = static.calls.last.request.url.params
+    assert (int(params["width"]), int(params["height"])) == (1024, 640)
+    assert params["mapset"] == "outdoor"
 
 
 @respx.mock
-async def test_both_mode_car_has_single_image_and_no_elevation(
+@pytest.mark.usefixtures("ui_client")
+async def test_with_ui_text_is_plain_no_images_no_base64_no_structured_content(
+    mcp_with_key: FastMCP,
+) -> None:
+    respx.get(_ROUTE_URL).respond(200, json=_route_body())
+    respx.get(_STATIC_URL).mock(side_effect=_static_response)
+    respx.get(_ELEVATION_URL).mock(side_effect=_elevation_response)
+    result = await _call(mcp_with_key, points=_POINTS, route_type="foot_fast")
+    assert all(isinstance(c, TextContent) for c in result.content)
+    assert result.structured_content is None
+    text = _text(result)
+    assert result.meta["map_image_jpeg_base64"] not in text
+    assert result.meta["profile_image_jpeg_base64"] not in text
+    assert "Route (foot_fast): 3.8 km, 49 min" in text
+    assert "Elevation: min 300 m, max 326 m" in text
+    assert "Grid" not in text
+    assert "https://" not in text
+    last = text.splitlines()[-1]
+    assert last.startswith("The user now sees, in the chat, ")
+    assert "the route on a map" in last
+    assert "an elevation profile" in last
+
+
+@respx.mock
+@pytest.mark.usefixtures("ui_client")
+async def test_with_ui_car_has_map_and_numbers_but_no_profile_or_elevation_calls(
     mcp_with_key: FastMCP,
 ) -> None:
     respx.get(_ROUTE_URL).respond(200, json=_route_body())
     static = respx.get(_STATIC_URL).mock(side_effect=_static_response)
     elevation = respx.get(_ELEVATION_URL).mock(side_effect=_elevation_response)
     result = await _call(mcp_with_key, points=_POINTS, route_type="car_fast")
-    assert len(_images(result)) == 1
     assert not elevation.called
     assert static.calls.last.request.url.params["mapset"] == "basic"
-    assert "Elevation" not in _text(result)
+    assert set(result.meta) == {
+        "map_url",
+        "language",
+        "map_image_jpeg_base64",
+        "route_length_m",
+        "route_duration_s",
+    }
+    last = _text(result).splitlines()[-1]
+    assert "elevation profile" not in last
+    assert "its length and time" in last
 
 
 @respx.mock
-async def test_map_mode_has_no_link(mcp_with_key: FastMCP) -> None:
+@pytest.mark.usefixtures("ui_client")
+async def test_with_ui_language_cs_in_meta(
+    mcp_with_key: FastMCP,
+) -> None:
     respx.get(_ROUTE_URL).respond(200, json=_route_body())
     respx.get(_STATIC_URL).mock(side_effect=_static_response)
     result = await _call(
-        mcp_with_key, points=_POINTS, route_type="car_fast", output="map"
+        mcp_with_key, points=_POINTS, route_type="car_fast", language="cs"
     )
-    assert len(_images(result)) == 1
-    assert "Map link" not in _text(result)
+    assert result.meta["language"] == "cs"
 
 
 @respx.mock
-async def test_long_route_uses_multiple_elevation_batches(
+@pytest.mark.usefixtures("ui_client")
+async def test_with_ui_german_maps_to_en_in_meta(mcp_with_key: FastMCP) -> None:
+    respx.get(_ROUTE_URL).respond(200, json=_route_body())
+    respx.get(_STATIC_URL).mock(side_effect=_static_response)
+    result = await _call(
+        mcp_with_key, points=_POINTS, route_type="car_fast", language="de"
+    )
+    assert result.meta["language"] == "en"
+
+
+@respx.mock
+@pytest.mark.usefixtures("ui_client")
+async def test_with_ui_long_route_uses_multiple_elevation_batches(
     mcp_with_key: FastMCP,
 ) -> None:
     # ~20 km line -> 512 samples -> two calls of 256 positions
@@ -317,11 +403,12 @@ async def test_long_route_uses_multiple_elevation_batches(
     requests: list[httpx.Request] = [call.request for call in elevation.calls]  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
     for request in requests:
         assert len(request.url.params["positions"].split(";")) == 256
-    assert len(_images(result)) == 2
+    assert "profile_image_jpeg_base64" in result.meta
 
 
 @respx.mock
-async def test_no_data_elevations_are_dropped(mcp_with_key: FastMCP) -> None:
+@pytest.mark.usefixtures("ui_client")
+async def test_with_ui_no_data_elevations_are_dropped(mcp_with_key: FastMCP) -> None:
     respx.get(_ROUTE_URL).respond(200, json=_route_body())
     respx.get(_STATIC_URL).mock(side_effect=_static_response)
 
@@ -334,117 +421,96 @@ async def test_no_data_elevations_are_dropped(mcp_with_key: FastMCP) -> None:
 
     respx.get(_ELEVATION_URL).mock(side_effect=with_gaps)
     result = await _call(mcp_with_key, points=_POINTS, route_type="foot_fast")
-    text = _text(result)
-    assert "Elevation: min 400 m" in text
-    assert "-100000" not in text
+    assert "Elevation: min 400 m" in _text(result)
+    assert -100000 not in result.meta["elevation_sparkline"]
 
 
 # ---------------------------------------------------------------------------
-# Failures
+# UI path failures: never raise (except a rejected key)
 # ---------------------------------------------------------------------------
 
 
 @respx.mock
-@pytest.mark.parametrize("output", ["url", "both"])
-async def test_routing_failure_falls_back_to_link(
-    mcp_with_key: FastMCP, output: str
+@pytest.mark.usefixtures("ui_client")
+@pytest.mark.parametrize(
+    "failure",
+    [Response(500), httpx.ConnectTimeout("slow")],
+    ids=["500", "timeout"],
+)
+async def test_with_ui_routing_failure_gives_text_and_meta_with_only_url_and_language(
+    mcp_with_key: FastMCP, failure: Response | Exception
 ) -> None:
-    respx.get(_ROUTE_URL).respond(500)
-    result = await _call(
-        mcp_with_key, points=_POINTS, route_type="foot_fast", output=output
-    )
-    text = _text(result)
-    assert text.startswith("Route planning failed (")
-    assert "Map link for the user: https://mapy.com/fnc/v1/route" in text
-    assert _images(result) == []
+    if isinstance(failure, Exception):
+        respx.get(_ROUTE_URL).mock(side_effect=failure)
+    else:
+        respx.get(_ROUTE_URL).mock(return_value=failure)
+    static = respx.get(_STATIC_URL).mock(side_effect=_static_response)
+    result = await _call(mcp_with_key, points=_POINTS, route_type="foot_fast")
+    assert not result.is_error
+    assert set(result.meta) == {"map_url", "language"}
+    assert _text(result).startswith("Route planning failed (")
+    assert not static.called
 
 
 @respx.mock
-async def test_routing_failure_in_map_mode_raises(mcp_with_key: FastMCP) -> None:
-    respx.get(_ROUTE_URL).respond(500)
-    with pytest.raises(ToolError, match="Route planning failed"):
-        await _call(mcp_with_key, points=_POINTS, route_type="foot_fast", output="map")
-
-
-@respx.mock
-async def test_routing_timeout_falls_back_to_link(mcp_with_key: FastMCP) -> None:
-    respx.get(_ROUTE_URL).mock(side_effect=httpx.ConnectTimeout("slow"))
-    text = _text(await _call(mcp_with_key, points=_POINTS, route_type="foot_fast"))
-    assert "Route planning failed" in text
-    assert "Map link for the user" in text
-
-
-@respx.mock
-async def test_static_map_failure_in_both_keeps_summary_and_profile(
+@pytest.mark.usefixtures("ui_client")
+async def test_with_ui_map_failure_drops_profile_from_meta_but_keeps_elevation_line(
     mcp_with_key: FastMCP,
 ) -> None:
     respx.get(_ROUTE_URL).respond(200, json=_route_body())
     respx.get(_STATIC_URL).respond(503)
-    respx.get(_ELEVATION_URL).mock(side_effect=_elevation_response)
+    elevation = respx.get(_ELEVATION_URL).mock(side_effect=_elevation_response)
     result = await _call(mcp_with_key, points=_POINTS, route_type="foot_fast")
+    assert not result.is_error
+    assert elevation.called
+    assert set(result.meta) == {
+        "map_url",
+        "language",
+        "route_length_m",
+        "route_duration_s",
+    }
+    assert result.meta["route_length_m"] == 3800
     text = _text(result)
-    assert len(_images(result)) == 1  # profile only
+    assert "The map image could not be drawn (" in text
     assert "Route (foot_fast): 3.8 km" in text
-    assert "Map image unavailable (" in text
-    assert "Elevation: min" in text
-    assert "Map link for the user" in text
+    assert "Elevation: min 300 m, max 326 m" in text
+    last = text.splitlines()[-1]
+    assert "the route on a map" not in last
+    assert "elevation profile" not in last
+    assert "its length and time" in last
 
 
 @respx.mock
-async def test_static_map_failure_in_map_mode_raises(mcp_with_key: FastMCP) -> None:
-    respx.get(_ROUTE_URL).respond(200, json=_route_body())
-    respx.get(_STATIC_URL).respond(503)
-    with pytest.raises(ToolError, match="Map image unavailable"):
-        await _call(mcp_with_key, points=_POINTS, route_type="car_fast", output="map")
-
-
-@respx.mock
-@pytest.mark.parametrize("output", ["map", "both"])
-async def test_elevation_failure_is_a_note_not_fatal(
-    mcp_with_key: FastMCP, output: str
+@pytest.mark.usefixtures("ui_client")
+@pytest.mark.parametrize("what", ["http", "no-data"])
+async def test_with_ui_elevation_failure_is_a_note_and_meta_has_no_profile(
+    mcp_with_key: FastMCP, what: str
 ) -> None:
     respx.get(_ROUTE_URL).respond(200, json=_route_body())
     respx.get(_STATIC_URL).mock(side_effect=_static_response)
-    respx.get(_ELEVATION_URL).respond(500)
-    result = await _call(
-        mcp_with_key, points=_POINTS, route_type="foot_fast", output=output
-    )
+    if what == "http":
+        respx.get(_ELEVATION_URL).respond(500)
+    else:
+
+        def no_data(request: httpx.Request) -> Response:
+            count = len(request.url.params["positions"].split(";"))
+            return Response(200, json={"items": [{"elevation": -100000}] * count})
+
+        respx.get(_ELEVATION_URL).mock(side_effect=no_data)
+    result = await _call(mcp_with_key, points=_POINTS, route_type="foot_fast")
+    assert not result.is_error
     text = _text(result)
-    assert len(_images(result)) == 1  # map only
     assert "Elevation profile unavailable (" in text
     assert "Elevation:" not in text
-    assert "Route (foot_fast)" in text
+    assert "profile_image_jpeg_base64" not in result.meta
+    assert "elevation_sparkline" not in result.meta
+    assert "map_image_jpeg_base64" in result.meta
+    assert "elevation profile" not in text.splitlines()[-1]
 
 
 @respx.mock
-async def test_single_leg_route_still_lists_the_leg(mcp_with_key: FastMCP) -> None:
-    respx.get(_ROUTE_URL).respond(200, json=_route_body())
-    text = _text(
-        await _call(mcp_with_key, points=_POINTS, route_type="car_fast", output="url")
-    )
-    assert "1. Castle → 2. Square: 3.8 km, 49 min" in text
-
-
-@respx.mock
-async def test_all_no_data_elevations_give_note_and_no_profile(
-    mcp_with_key: FastMCP,
-) -> None:
-    respx.get(_ROUTE_URL).respond(200, json=_route_body())
-    respx.get(_STATIC_URL).mock(side_effect=_static_response)
-
-    def no_data(request: httpx.Request) -> Response:
-        count = len(request.url.params["positions"].split(";"))
-        return Response(200, json={"items": [{"elevation": -100000}] * count})
-
-    respx.get(_ELEVATION_URL).mock(side_effect=no_data)
-    result = await _call(mcp_with_key, points=_POINTS, route_type="foot_fast")
-    assert len(_images(result)) == 1
-    assert "Elevation profile unavailable (" in _text(result)
-    assert "Elevation:" not in _text(result)
-
-
-@respx.mock
-async def test_zero_length_route_skips_profile_without_error(
+@pytest.mark.usefixtures("ui_client")
+async def test_with_ui_zero_length_route_skips_profile_without_error(
     mcp_with_key: FastMCP,
 ) -> None:
     respx.get(_ROUTE_URL).respond(
@@ -456,22 +522,24 @@ async def test_zero_length_route_skips_profile_without_error(
     result = await _call(mcp_with_key, points=_POINTS, route_type="foot_fast")
     assert not elevation.called
     assert "Elevation profile unavailable (" in _text(result)
+    assert "profile_image_jpeg_base64" not in result.meta
 
 
 @respx.mock
+@pytest.mark.usefixtures("ui_client")
 @pytest.mark.parametrize("status", [401, 403])
-@pytest.mark.parametrize("output", ["url", "both", "map"])
-async def test_rejected_key_on_routing_raises_rejected_message(
-    mcp_with_key: FastMCP, status: int, output: str
+async def test_with_ui_rejected_key_on_routing_raises_rejected_message(
+    mcp_with_key: FastMCP, status: int
 ) -> None:
     respx.get(_ROUTE_URL).respond(status)
     with pytest.raises(ToolError, match=r"Mapy\.com rejected the API key"):
-        await _call(mcp_with_key, points=_POINTS, route_type="foot_fast", output=output)
+        await _call(mcp_with_key, points=_POINTS, route_type="foot_fast")
 
 
 @respx.mock
+@pytest.mark.usefixtures("ui_client")
 @pytest.mark.parametrize("status", [401, 403])
-async def test_rejected_key_on_static_map_raises_rejected_message(
+async def test_with_ui_rejected_key_on_static_map_raises_rejected_message(
     mcp_with_key: FastMCP, status: int
 ) -> None:
     respx.get(_ROUTE_URL).respond(200, json=_route_body())
@@ -482,7 +550,8 @@ async def test_rejected_key_on_static_map_raises_rejected_message(
 
 
 @respx.mock
-async def test_rejected_key_on_elevation_raises_rejected_message(
+@pytest.mark.usefixtures("ui_client")
+async def test_with_ui_rejected_key_on_elevation_raises_rejected_message(
     mcp_with_key: FastMCP,
 ) -> None:
     respx.get(_ROUTE_URL).respond(200, json=_route_body())

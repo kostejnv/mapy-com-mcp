@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 
 from ..links.urls import Point
 from ..mapy_api.client import MapyClient, StaticMapset
@@ -13,8 +14,8 @@ from ..static_map.profile import (
     render_profile,
     sample_positions,
 )
-from ..static_map.render import format_distance, grid_step_m, render
-from ..static_map.viewport import fit_viewport
+from ..static_map.render import render
+from ..static_map.viewport import Viewport, fit_viewport
 
 # The static map API has no traffic layer; basic is the closest look for cars.
 _STATIC_MAPSET: dict[RouteType, StaticMapset] = {
@@ -31,6 +32,7 @@ PROFILE_ROUTE_TYPES: frozenset[RouteType] = frozenset(
 )
 _SNAP_WARNING_M = 50
 _MIN_VALID_ELEVATION_M = -1000  # the API marks missing data as -100000
+_SPARKLINE_POINTS = 64
 
 
 class NoElevationDataError(Exception):
@@ -72,16 +74,25 @@ def route_warnings(points: list[Point], route: Route) -> list[str]:
     return [f"Warnings: {' '.join(found)}"] if found else []
 
 
+def route_viewport(
+    points: list[Point], route: Route, *, landscape_only: bool = False
+) -> Viewport:
+    """The map area that fits the whole route line and all its points."""
+    coords = [(p.lon, p.lat) for p in points]
+    return fit_viewport([*route.geometry, *coords], landscape_only=landscape_only)
+
+
 async def route_map(
     client: MapyClient,
     points: list[Point],
     route_type: RouteType,
     route: Route,
+    viewport: Viewport,
     language: str,
-) -> tuple[bytes, str]:
-    """JPEG of the route with numbered points, and the grid-spacing line."""
-    coords = [(p.lon, p.lat) for p in points]
-    viewport = fit_viewport([*route.geometry, *coords])
+    *,
+    grid: bool = True,
+) -> bytes:
+    """JPEG of the route with numbered points over the viewport."""
     base = await client.static_map(
         lon=viewport.center_lon,
         lat=viewport.center_lat,
@@ -91,14 +102,19 @@ async def route_map(
         mapset=_STATIC_MAPSET[route_type],
         lang=language,
     )
-    grid = format_distance(grid_step_m(viewport))
-    return render(
-        base, viewport, coords, route.geometry
-    ), f"Grid: {grid} between lines."
+    coords = [(p.lon, p.lat) for p in points]
+    return render(base, viewport, coords, route.geometry, grid=grid)
 
 
-async def elevation(client: MapyClient, route: Route) -> tuple[bytes, str]:
-    """Profile image and the summary line, from sampled route elevations.
+@dataclass(frozen=True)
+class Elevation:
+    profile_jpeg: bytes
+    summary_line: str
+    sparkline: list[int]  # ~_SPARKLINE_POINTS heights in m, for a tiny chart
+
+
+async def elevation(client: MapyClient, route: Route) -> Elevation:
+    """Profile image, summary line and sparkline, from sampled route elevations.
 
     Raises NoElevationDataError when there is nothing to plot.
     """
@@ -134,7 +150,12 @@ async def elevation(client: MapyClient, route: Route) -> tuple[bytes, str]:
         f"Elevation: min {stats.min_m:.0f} m, max {stats.max_m:.0f} m, "
         f"ascent +{stats.ascent_m:.0f} m, descent -{stats.descent_m:.0f} m"
     )
-    return render_profile(profile, point_distances, stats), line
+    step = max(1, len(profile) // _SPARKLINE_POINTS)
+    return Elevation(
+        profile_jpeg=render_profile(profile, point_distances, stats),
+        summary_line=line,
+        sparkline=[round(h) for _, h in profile[::step]],
+    )
 
 
 def _format_length(meters: int) -> str:

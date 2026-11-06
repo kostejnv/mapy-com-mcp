@@ -19,8 +19,10 @@ from ..reports.route import (
     elevation,
     route_map,
     route_summary,
+    route_viewport,
     route_warnings,
 )
+from ..static_map.render import grid_line
 
 
 def register(mcp: FastMCP, *, client: MapyClient, **_: object) -> None:
@@ -80,24 +82,25 @@ def register(mcp: FastMCP, *, client: MapyClient, **_: object) -> None:
         lines = route_summary(points, route_type, route)
         images: list[Image | str] = []
         notes: list[str] = []
+        viewport = route_viewport(points, route)
         try:
-            map_jpeg, grid_line = await route_map(
-                client, points, route_type, route, language
+            map_jpeg = await route_map(
+                client, points, route_type, route, viewport, language
             )
         except (MapyAPIError, httpx.HTTPError) as exc:
             notes.append(f"Map image unavailable ({exc}).")
         else:
             images.append(Image(data=map_jpeg, format="jpeg"))
-            notes.append(grid_line)
+            notes.append(grid_line(viewport))
 
         if route_type in PROFILE_ROUTE_TYPES:
             try:
-                profile_jpeg, elevation_line = await elevation(client, route)
+                profile = await elevation(client, route)
             except (MapyAPIError, httpx.HTTPError, NoElevationDataError) as exc:
                 notes.append(f"Elevation profile unavailable ({exc}).")
             else:
-                images.append(Image(data=profile_jpeg, format="jpeg"))
-                lines.append(elevation_line)
+                images.append(Image(data=profile.profile_jpeg, format="jpeg"))
+                lines.append(profile.summary_line)
 
         text = [*lines, *route_warnings(points, route), *notes]
         return [*images, "\n".join(text)]

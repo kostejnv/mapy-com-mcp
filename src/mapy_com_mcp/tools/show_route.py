@@ -2,29 +2,28 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated
 
 import httpx
 from fastmcp import FastMCP
-from fastmcp.exceptions import ToolError
-from fastmcp.tools import Tool
-from fastmcp.utilities.types import Image
+from fastmcp.tools import Tool, ToolResult
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from ..links.urls import MAX_ROUTE_POINTS, Language, Point, build_route_url
+from ..map_view import MAP_VIEW_TOOL_META, client_shows_map_view, map_view_meta
 from ..mapy_api.client import MapyAPIError, MapyClient
 from ..mapy_api.routing import RouteType
 from ..reports.route import (
     PROFILE_ROUTE_TYPES,
+    Elevation,
     NoElevationDataError,
     elevation,
     route_map,
     route_summary,
+    route_viewport,
     route_warnings,
 )
-
-Output = Literal["url", "map", "both"]
 
 
 def register(mcp: FastMCP, *, client: MapyClient, **_: object) -> None:
@@ -52,95 +51,115 @@ def register(mcp: FastMCP, *, client: MapyClient, **_: object) -> None:
                 ),
             ),
         ],
-        output: Annotated[
-            Output,
-            Field(
-                description=(
-                    "'both' (default): route summary, map image and elevation "
-                    "profile for you, plus a mapy.com link for the user. 'map': "
-                    "summary and images only. 'url': summary and link only — "
-                    "no images, no elevation."
-                ),
-            ),
-        ] = "both",
         language: Annotated[
             Language,
             Field(
                 description=(
-                    "UI and label language. 'en' (default) for English, "
-                    "'cs' for Czech, 'sk' for Slovak, 'de' for German, "
-                    "'pl' for Polish."
+                    "Language of the map labels and the link: 'en' (default) "
+                    "for English, 'cs' for Czech, 'sk' for Slovak, 'de' for "
+                    "German, 'pl' for Polish. Use the user's language. The "
+                    "inline map's own text is Czech for 'cs', else English."
                 ),
             ),
         ] = "en",
-    ) -> str | list[Image | str]:
-        """Plan a route through points, usually with a mapy.com link for the user.
+    ) -> ToolResult:
+        """Show the user a route through points, with distance and time.
 
         Use this when the user asks how to get from A to B, how long a walk,
         ride or drive takes, or wants a trip with stops. The map area is
         chosen automatically; you never pick a zoom or map style.
 
-        It returns the total and per-leg distance and time,
-        warnings about points moved onto the network or lying in restricted
-        areas, and — in 'map'/'both' — a map image with the route and
-        numbered points over a coordinate grid. On foot and by bike it adds
-        an elevation profile with min/max and total ascent/descent.
+        You get the total and per-leg distance and time and warnings about
+        points moved onto the network or lying in restricted areas. In
+        clients that can show it, the user sees the route on a map right in
+        the chat — on foot and by bike with an elevation profile — and a
+        button that opens it on mapy.com; elsewhere you get a mapy.com link
+        to give the user. The reply says which happened.
 
         Do NOT use this to merely show places on a map (use show_places).
         To plan a route for yourself without showing the user, use
         plan_route.
         """
         url = build_route_url(points, route_type, language)
+        shows_view = client_shows_map_view()
         coords = [(p.lon, p.lat) for p in points]
         try:
             route = await client.route(coords, route_type=route_type, lang=language)
         except (MapyAPIError, httpx.HTTPError) as exc:
-            if output == "map":
-                raise ToolError(f"Route planning failed: {exc}") from exc
-            return f"Route planning failed ({exc}).\nMap link for the user: {url}"
+            if not shows_view:
+                return ToolResult(
+                    f"Route planning failed ({exc}). Give the user this mapy.com "
+                    f"link to the route: {url}"
+                )
+            return ToolResult(
+                f"Route planning failed ({exc}); the user sees only an "
+                '"Open on Mapy.com" button for the route.',
+                meta=map_view_meta(url, language),
+            )
 
         lines = route_summary(points, route_type, route)
         warnings = route_warnings(points, route)
-        if output == "url":
-            return "\n".join([*lines, *warnings, f"Map link for the user: {url}"])
+        if not shows_view:
+            link = f"Give the user this mapy.com link to the route: {url}"
+            return ToolResult("\n".join([*lines, *warnings, link]))
 
-        images: list[Image | str] = []
         notes: list[str] = []
+        viewport = route_viewport(points, route, landscape_only=True)
+        map_jpeg: bytes | None = None
         try:
-            map_jpeg, grid_line = await route_map(
-                client, points, route_type, route, language
+            map_jpeg = await route_map(
+                client, points, route_type, route, viewport, language, grid=False
             )
         except (MapyAPIError, httpx.HTTPError) as exc:
-            if output == "map":
-                raise ToolError(f"Map image unavailable: {exc}") from exc
-            notes.append(f"Map image unavailable ({exc}).")
-        else:
-            images.append(Image(data=map_jpeg, format="jpeg"))
-            notes.append(grid_line)
+            notes.append(f"The map image could not be drawn ({exc}).")
 
+        profile: Elevation | None = None
         if route_type in PROFILE_ROUTE_TYPES:
             try:
-                profile_jpeg, elevation_line = await elevation(client, route)
+                profile = await elevation(client, route)
             except (MapyAPIError, httpx.HTTPError, NoElevationDataError) as exc:
                 notes.append(f"Elevation profile unavailable ({exc}).")
             else:
-                images.append(Image(data=profile_jpeg, format="jpeg"))
-                lines.append(elevation_line)
+                lines.append(profile.summary_line)
 
-        text = [*lines, *warnings, *notes]
-        if output == "both":
-            text.append(f"Map link for the user: {url}")
-        return [*images, "\n".join(text)]
+        # The view draws the elevation profile on top of the map: no map, no profile.
+        profile_shown = profile if map_jpeg is not None else None
+        meta = map_view_meta(
+            url,
+            language,
+            map_jpeg=map_jpeg,
+            route_length_m=route.length_m,
+            route_duration_s=route.duration_s,
+            profile_jpeg=profile_shown.profile_jpeg if profile_shown else None,
+            elevation_sparkline=profile_shown.sparkline if profile_shown else None,
+        )
+        shown = _what_the_user_sees(
+            has_map=map_jpeg is not None, has_profile=profile_shown is not None
+        )
+        return ToolResult("\n".join([*lines, *warnings, *notes, shown]), meta=meta)
 
     mcp.add_tool(
         Tool.from_tool(
             show_route,
+            meta=MAP_VIEW_TOOL_META,
             annotations=ToolAnnotations(
-                title="Plan a route on a map",
+                title="Show a route on a map",
                 readOnlyHint=True,
                 destructiveHint=False,
                 idempotentHint=True,
                 openWorldHint=True,
             ),
         )
+    )
+
+
+def _what_the_user_sees(*, has_map: bool, has_profile: bool) -> str:
+    parts = ["the route on a map"] if has_map else []
+    parts.append("its length and time")
+    if has_profile:
+        parts.append("an elevation profile")
+    return (
+        f"The user now sees, in the chat, {', '.join(parts)} and an "
+        '"Open on Mapy.com" button. Don\'t repeat the link or restate these '
+        "numbers; add only what helps, e.g. whether the route fits their plans."
     )

@@ -22,8 +22,8 @@ MCP server that lets LLMs find places, look at them on a real map, and hand the 
 
 LLMs are good at recommending places and itineraries, but bad at anything requiring real spatial understanding — distances, walkability, what's near what. This server closes that gap from both sides:
 
-- **The model checks its work.** `find_places` turns names into real coordinates, so suggestions are grounded in actual places. `show_places` and `show_route` then return map images with numbered markers and a coordinate grid, so the model can *see* how the places relate before it answers — and a route comes with real distance, time and, on foot or by bike, an elevation profile. `inspect_places` and `plan_route` do the same for the model alone, without showing the user anything.
-- **The user gets a map, not just text.** `show_places` and `show_route` hand the user a mapy.com link to the same places or route.
+- **The model checks its work.** `find_places` turns names into real coordinates, so suggestions are grounded in actual places. `inspect_places` and `plan_route` then return map images with numbered markers and a coordinate grid, so the model can *see* how the places relate before it answers — and a route comes with real distance, time and, on foot or by bike, an elevation profile.
+- **The user gets a map, not just text.** `show_places` and `show_route` show the places or the route on a map right in the chat, with a button that opens the same view on mapy.com — in clients that support [MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview), such as Claude and ChatGPT. Other clients get a mapy.com link to hand on.
 
 Built on [mapy.com](https://mapy.com), the Czech mapping service from Seznam.cz — especially strong in the Czech Republic and the surrounding region.
 
@@ -31,8 +31,8 @@ Built on [mapy.com](https://mapy.com), the Czech mapping service from Seznam.cz 
 
 | Tool | What it does |
 |---|---|
-| `show_places` | Shows one or more labeled points on a map. Returns a mapy.com link for the user and a map image the model can look at: numbered markers and a coordinate grid for reading positions and distances. `output` picks `url`, `map` or `both`. Area and zoom are fitted to the points automatically. |
-| `show_route` | Plans a route through 2–17 labeled points (start, up to 15 waypoints, destination) for car, foot or bike. Returns a mapy.com link, total and per-leg distance and time, warnings about moved or restricted points, a map image of the route with numbered points, and on foot or by bike an elevation profile with min/max and total ascent/descent. `output` picks `url`, `map` or `both`. |
+| `show_places` | Shows the user one or more labeled points on a map: an inline map with numbered markers and an "Open on Mapy.com" button where the client supports it, otherwise a mapy.com link. Area and zoom are fitted to the points automatically. |
+| `show_route` | Shows the user a route through 2–17 labeled points (start, up to 15 waypoints, destination) for car, foot or bike: an inline map with length, time and, on foot or by bike, an elevation profile that opens large on click — or a mapy.com link. The model gets total and per-leg distance and time and warnings about moved or restricted points. |
 | `inspect_places` | Lets the model look at places for itself, without showing the user anything: a map image with numbered markers and a coordinate grid, to check how places relate before it answers. |
 | `plan_route` | Lets the model plan a route for itself, without showing the user anything: total and per-leg distance and time, warnings, a map image of the route and, on foot or by bike, an elevation profile. |
 | `find_places` | Resolves human-readable place references (names, addresses, POIs) to WGS84 coordinates via the mapy.com REST API. Accepts a batch of queries and an optional `near` hint for disambiguation. Feed the result into `show_places` / `show_route`. |

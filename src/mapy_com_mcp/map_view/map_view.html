@@ -1,0 +1,389 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Map from Mapy.com</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --surface: light-dark(#ffffff, #1f1f1e);
+        --stage: light-dark(#f4f3ef, #141413);
+        --border: light-dark(#e4e2da, #3a3a37);
+        --text: light-dark(#26261f, #f2f1ec);
+        --muted: light-dark(#6b6a60, #a9a89f);
+        --button: light-dark(#f4f3ef, #f2f1ec);
+        --button-hover: light-dark(#e9e7df, #ffffff);
+        --marker: #d0121f;
+        --elevation: #1e64e6;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      html,
+      body {
+        margin: 0;
+        overflow: hidden;
+      }
+      #card {
+        max-width: 720px;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: var(--surface);
+        color: var(--text);
+        font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      #stage {
+        position: relative;
+        background: var(--stage);
+      }
+      #map {
+        display: block;
+        width: 100%;
+      }
+      /* Bottom offset keeps the map's attribution readable. */
+      #mini-profile {
+        position: absolute;
+        right: 8px;
+        bottom: 26px;
+        width: 120px;
+        height: 40px;
+        padding: 4px;
+        border: 1px solid #d8d6cc;
+        border-radius: 8px;
+        background: #ffffffe6;
+        box-shadow: 0 1px 4px #00000033;
+        cursor: pointer;
+      }
+      #mini-profile:hover {
+        background: #ffffff;
+      }
+      #mini-profile svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      #mini-profile polygon {
+        fill: #cddef8;
+      }
+      #mini-profile polyline {
+        fill: none;
+        stroke: var(--elevation);
+        stroke-width: 1.5;
+        vector-effect: non-scaling-stroke;
+      }
+      #profile {
+        position: absolute;
+        right: 8px;
+        bottom: 26px;
+        left: 8px;
+        overflow: hidden;
+        border-radius: 10px;
+        background: #ffffff;
+        box-shadow: 0 2px 12px #00000055;
+      }
+      #profile img {
+        display: block;
+        width: 100%;
+      }
+      #close-profile {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        display: grid;
+        place-items: center;
+        width: 26px;
+        height: 26px;
+        padding: 0;
+        border: 0;
+        border-radius: 50%;
+        background: #26261f;
+        color: #ffffff;
+        font-size: 16px;
+        line-height: 1;
+        cursor: pointer;
+      }
+      footer {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 14px;
+      }
+      #summary {
+        margin: 6px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      #places {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 14px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      #places li {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      #places b {
+        display: grid;
+        place-items: center;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: var(--marker);
+        color: #ffffff;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      #open-link {
+        display: flex;
+        flex-shrink: 0;
+        align-items: center;
+        gap: 8px;
+        margin-left: auto;
+        padding: 7px 12px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--button);
+        color: #26261f;
+        font: inherit;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background 120ms ease;
+      }
+      #open-link:hover {
+        background: var(--button-hover);
+      }
+      button:focus-visible {
+        outline: 2px solid var(--marker);
+        outline-offset: 2px;
+      }
+      #open-link svg {
+        display: block;
+      }
+      #logo svg {
+        width: 80px;
+        height: 24px;
+      }
+    </style>
+  </head>
+  <body>
+    <main id="card" hidden>
+      <div id="stage" hidden>
+        <img id="map" alt="Map of the requested places" />
+        <button id="mini-profile" aria-label="Show elevation profile" hidden>
+          <svg viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true">
+            <polygon id="sparkline-area" />
+            <polyline id="sparkline-line" />
+          </svg>
+        </button>
+        <div id="profile" hidden>
+          <img id="profile-image" alt="Elevation profile of the route" />
+          <button id="close-profile" aria-label="Close elevation profile">×</button>
+        </div>
+      </div>
+      <footer>
+        <div>
+          <ol id="places"></ol>
+          <p id="summary" hidden></p>
+        </div>
+        <button id="open-link" aria-label="Open on Mapy.com">
+          <span id="open-on">Open on</span>
+          <span id="logo"><!-- mapy-logo --></span>
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+            <path
+              d="M4 10 10 4M5 4h5v5"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </button>
+      </footer>
+    </main>
+
+    <script>
+      const INITIALIZE_REQUEST_ID = 1;
+      const OPEN_LINK_REQUEST_ID = 2;
+
+      // Any language other than Czech gets English.
+      const TEXT = {
+        en: {
+          locale: "en-GB",
+          openOn: "Open on",
+          openOnMapy: "Open on Mapy.com",
+          mapAlt: "Map of the requested places",
+          showProfile: "Show elevation profile",
+          profileAlt: "Elevation profile of the route",
+          closeProfile: "Close elevation profile",
+        },
+        cs: {
+          locale: "cs-CZ",
+          openOn: "Otevřít na",
+          openOnMapy: "Otevřít na Mapy.com",
+          mapAlt: "Mapa požadovaných míst",
+          showProfile: "Zobrazit výškový profil",
+          profileAlt: "Výškový profil trasy",
+          closeProfile: "Zavřít výškový profil",
+        },
+      };
+
+      const element = (id) => document.getElementById(id);
+
+      function applyLanguage(language) {
+        const text = TEXT[language] ?? TEXT.en;
+        document.documentElement.lang = language === "cs" ? "cs" : "en";
+        element("open-on").textContent = text.openOn;
+        element("open-link").setAttribute("aria-label", text.openOnMapy);
+        element("map").alt = text.mapAlt;
+        element("mini-profile").setAttribute("aria-label", text.showProfile);
+        element("profile-image").alt = text.profileAlt;
+        element("close-profile").setAttribute("aria-label", text.closeProfile);
+        return text;
+      }
+
+      // Same rounding as the route summary the model gets.
+      function formatRoute(lengthM, durationS, locale) {
+        const kilometers = new Intl.NumberFormat(locale, {
+          minimumFractionDigits: 1,
+          maximumFractionDigits: 1,
+        });
+        const roundedM = Math.round(lengthM / 10) * 10;
+        const length =
+          roundedM >= 1000 ? `${kilometers.format(lengthM / 1000)} km` : `${roundedM} m`;
+        const totalMinutes = Math.round(durationS / 60);
+        const hours = Math.floor(totalMinutes / 60);
+        const minutes = totalMinutes % 60;
+        const time = hours
+          ? `${hours} h ${String(minutes).padStart(2, "0")} min`
+          : `${minutes} min`;
+        return `${length} · ${time}`;
+      }
+
+      function send(message) {
+        window.parent.postMessage({ jsonrpc: "2.0", ...message }, "*");
+      }
+
+      function applyHostTheme(hostContext) {
+        if (hostContext?.theme) {
+          document.documentElement.style.colorScheme = hostContext.theme;
+        }
+      }
+
+      function showPlaces(points = []) {
+        element("places").replaceChildren(
+          ...points.map(({ label }, index) => {
+            const number = document.createElement("b");
+            number.textContent = index + 1;
+            const place = document.createElement("li");
+            place.append(number, label);
+            return place;
+          }),
+        );
+      }
+
+      function drawSparkline(heights) {
+        const lowest = Math.min(...heights);
+        const span = Math.max(Math.max(...heights) - lowest, 1);
+        const line = heights
+          .map((height, index) => {
+            const x = (index / (heights.length - 1)) * 100;
+            const y = 28 - ((height - lowest) / span) * 25;
+            return `${x},${y}`;
+          })
+          .join(" ");
+        element("sparkline-line").setAttribute("points", line);
+        element("sparkline-area").setAttribute("points", `0,30 ${line} 100,30`);
+      }
+
+      function showElevation(meta) {
+        if (!meta.elevation_sparkline || !meta.profile_image_jpeg_base64) return;
+
+        drawSparkline(meta.elevation_sparkline);
+        element("profile-image").src =
+          `data:image/jpeg;base64,${meta.profile_image_jpeg_base64}`;
+        element("mini-profile").hidden = false;
+      }
+
+      function setProfileExpanded(expanded) {
+        element("profile").hidden = !expanded;
+        element("mini-profile").hidden = expanded;
+      }
+
+      function showToolResult(result) {
+        const meta = result._meta ?? {};
+        const mapUrl = meta.map_url;
+        if (!mapUrl) return; // e.g. a failed call: stay empty, at zero height
+
+        const text = applyLanguage(meta.language);
+        if (meta.map_image_jpeg_base64) {
+          element("map").src = `data:image/jpeg;base64,${meta.map_image_jpeg_base64}`;
+          element("stage").hidden = false;
+          showElevation(meta);
+        }
+        if (meta.route_length_m !== undefined) {
+          element("summary").textContent = formatRoute(
+            meta.route_length_m,
+            meta.route_duration_s,
+            text.locale,
+          );
+          element("summary").hidden = false;
+        }
+        element("open-link").onclick = () =>
+          send({
+            id: OPEN_LINK_REQUEST_ID,
+            method: "ui/open-link",
+            params: { url: mapUrl },
+          });
+        element("card").hidden = false;
+      }
+
+      function reportSizeChanges() {
+        new ResizeObserver(() => {
+          const { scrollWidth: width, scrollHeight: height } = document.body;
+          send({
+            method: "ui/notifications/size-changed",
+            params: { width, height },
+          });
+        }).observe(document.body);
+      }
+
+      element("mini-profile").onclick = () => setProfileExpanded(true);
+      element("close-profile").onclick = () => setProfileExpanded(false);
+
+      window.addEventListener("message", ({ data, source }) => {
+        if (source !== window.parent) return;
+
+        if (data.method === "ui/notifications/tool-input") {
+          showPlaces(data.params.arguments?.points);
+        } else if (data.method === "ui/notifications/tool-result") {
+          showToolResult(data.params);
+        } else if (data.method === "ui/notifications/host-context-changed") {
+          applyHostTheme(data.params);
+        } else if (data.method === "ui/resource-teardown" || data.method === "ping") {
+          send({ id: data.id, result: {} });
+        } else if (!data.method && data.id === INITIALIZE_REQUEST_ID) {
+          applyHostTheme(data.result?.hostContext);
+          send({ method: "ui/notifications/initialized", params: {} });
+          reportSizeChanges();
+        }
+      });
+
+      send({
+        id: INITIALIZE_REQUEST_ID,
+        method: "ui/initialize",
+        params: {
+          protocolVersion: "2026-01-26",
+          appInfo: { name: "mapy-com-mcp map view", version: "0.0.0" },
+          appCapabilities: {},
+        },
+      });
+    </script>
+  </body>
+</html>

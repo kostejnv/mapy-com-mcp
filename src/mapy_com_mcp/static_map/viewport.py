@@ -80,15 +80,18 @@ class Viewport:
         return lon_lat(cx - self.width / 2 + x, cy - self.height / 2 + y, self.zoom)
 
 
-def fit_viewport(points: list[tuple[float, float]]) -> Viewport:
+def fit_viewport(
+    points: list[tuple[float, float]], *, landscape_only: bool = False
+) -> Viewport:
     """Fit (lon, lat) points: image shape, largest zoom that fits, center.
 
     The agent never picks a zoom. A single point (zero extent) gets
-    SINGLE_POINT_ZOOM.
+    SINGLE_POINT_ZOOM. With landscape_only, any set of points gets a landscape
+    image, which fills a chat's width without taking much of its height.
     """
     xs, ys = zip(*(world_px(lon, lat, 0) for lon, lat in points), strict=True)
     extent_x, extent_y = max(xs) - min(xs), max(ys) - min(ys)
-    width, height = _pick_size(extent_x, extent_y)
+    width, height = _LANDSCAPE if landscape_only else _pick_size(extent_x, extent_y)
 
     left = max(_MARGIN_FRACTION * width, _MIN_LEFT_MARGIN_PX)
     top = max(_MARGIN_FRACTION * height, _MIN_TOP_MARGIN_PX)
